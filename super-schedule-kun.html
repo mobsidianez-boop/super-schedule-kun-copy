@@ -169,7 +169,32 @@
       <div class="section-head">
         <p class="eyebrow">BOARD</p>
         <h2 id="bulletin-title">ひとこと掲示板</h2>
-        <p class="board-intro">名前とメッセージを入れて送信すると、みんなの投稿がこのページの下に新しい順で表示されます。</p>
+        <p class="board-intro">ログインしてから名前とメッセージを送ると、みんなの投稿がこのページの下に新しい順で表示されます。</p>
+      </div>
+
+      <div class="auth-panel">
+        <form class="auth-form" id="auth-form">
+          <label>
+            <span>メールアドレス</span>
+            <input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+          </label>
+          <label>
+            <span>パスワード</span>
+            <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上" required>
+          </label>
+          <div class="auth-actions">
+            <button class="button primary" type="submit" data-auth-action="login">ログイン</button>
+            <button class="button" type="button" id="signup-button">新規登録</button>
+          </div>
+        </form>
+        <div class="auth-session" id="auth-session" hidden>
+          <div>
+            <span>ログイン中</span>
+            <strong id="auth-email-display"></strong>
+          </div>
+          <button class="button" type="button" id="logout-button">ログアウト</button>
+        </div>
+        <p class="auth-status" id="auth-status">投稿するにはログインしてください。</p>
       </div>
 
       <form class="bulletin-form" id="bulletin-form">
@@ -207,17 +232,50 @@
     (() => {
       const MAX_NAME_LENGTH = 24;
       const MAX_BODY_LENGTH = 160;
+      let currentSession = null;
       const form = document.querySelector("#bulletin-form");
       const nameInput = document.querySelector("#bulletin-name");
       const messageInput = document.querySelector("#bulletin-message");
+      const submitButton = form.querySelector("button");
+      const authForm = document.querySelector("#auth-form");
+      const authEmailInput = document.querySelector("#auth-email");
+      const authPasswordInput = document.querySelector("#auth-password");
+      const signupButton = document.querySelector("#signup-button");
+      const logoutButton = document.querySelector("#logout-button");
+      const authSession = document.querySelector("#auth-session");
+      const authEmailDisplay = document.querySelector("#auth-email-display");
+      const authStatus = document.querySelector("#auth-status");
       const list = document.querySelector("#bulletin-list");
       const count = document.querySelector("#bulletin-count");
       const status = document.querySelector("#bulletin-status");
       const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+      const setAuthStatus = (message, tone = "muted") => {
+        authStatus.textContent = message;
+        authStatus.dataset.tone = tone;
+      };
+
       const setStatus = (message, tone = "muted") => {
         status.textContent = message;
         status.dataset.tone = tone;
+      };
+
+      const updateAuthView = (session) => {
+        currentSession = session;
+        const isLoggedIn = Boolean(session);
+        authForm.hidden = isLoggedIn;
+        authSession.hidden = !isLoggedIn;
+        nameInput.disabled = !isLoggedIn;
+        messageInput.disabled = !isLoggedIn;
+        submitButton.disabled = !isLoggedIn;
+
+        if (isLoggedIn) {
+          authEmailDisplay.textContent = session.user.email || "ログイン済みユーザー";
+          setAuthStatus("ログイン中です。投稿できます。", "success");
+        } else {
+          authEmailDisplay.textContent = "";
+          setAuthStatus("投稿するにはログインしてください。", "warning");
+        }
       };
 
       const formatDate = (dateText) => {
@@ -293,6 +351,11 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (!currentSession) {
+          setStatus("投稿するにはログインしてください。", "warning");
+          return;
+        }
+
         const name = nameInput.value.trim();
         const body = messageInput.value.trim();
 
@@ -306,7 +369,6 @@
           return;
         }
 
-        const submitButton = form.querySelector("button");
         submitButton.disabled = true;
         setStatus("送信しています。");
 
@@ -316,7 +378,8 @@
             .insert({
               name,
               body,
-              content: body
+              content: body,
+              user_id: currentSession.user.id
             });
 
           if (error) {
@@ -331,7 +394,62 @@
           setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
         } finally {
           submitButton.disabled = false;
+          updateAuthView(currentSession);
         }
+      });
+
+      authForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const email = authEmailInput.value.trim();
+        const password = authPasswordInput.value;
+
+        setAuthStatus("ログインしています。");
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+        if (error) {
+          setAuthStatus(`ログインできませんでした: ${getErrorMessage(error)}`, "error");
+          return;
+        }
+
+        updateAuthView(data.session);
+      });
+
+      signupButton.addEventListener("click", async () => {
+        const email = authEmailInput.value.trim();
+        const password = authPasswordInput.value;
+
+        if (!email || !password) {
+          setAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+          return;
+        }
+
+        setAuthStatus("登録しています。");
+        const { data, error } = await supabase.auth.signUp({ email, password });
+
+        if (error) {
+          setAuthStatus(`登録できませんでした: ${getErrorMessage(error)}`, "error");
+          return;
+        }
+
+        if (data.session) {
+          updateAuthView(data.session);
+          return;
+        }
+
+        setAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。", "success");
+      });
+
+      logoutButton.addEventListener("click", async () => {
+        await supabase.auth.signOut();
+        updateAuthView(null);
+      });
+
+      supabase.auth.onAuthStateChange((_event, session) => {
+        updateAuthView(session);
+      });
+
+      supabase.auth.getSession().then(({ data }) => {
+        updateAuthView(data.session);
       });
 
       loadPosts();
