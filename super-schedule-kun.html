@@ -211,8 +211,7 @@
       const list = document.querySelector("#bulletin-list");
       const count = document.querySelector("#bulletin-count");
       const status = document.querySelector("#bulletin-status");
-      const isConfigured = !SUPABASE_URL.includes("YOUR_") && !SUPABASE_ANON_KEY.includes("YOUR_");
-      const supabase = isConfigured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
       const setStatus = (message, tone = "muted") => {
         status.textContent = message;
@@ -273,13 +272,6 @@
       };
 
       const loadPosts = async () => {
-        if (!supabase) {
-          form.querySelector("button").disabled = true;
-          setStatus("Supabase の URL と公開キーを設定すると、みんなの掲示板として使えます。", "warning");
-          renderPosts([]);
-          return;
-        }
-
         setStatus("投稿を読み込んでいます。");
         const { data, error } = await supabase
           .from("messages")
@@ -299,10 +291,6 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!supabase) {
-          return;
-        }
-
         const name = nameInput.value.trim();
         const body = messageInput.value.trim();
 
