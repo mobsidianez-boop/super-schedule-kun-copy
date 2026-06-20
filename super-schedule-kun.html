@@ -3,830 +3,171 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>超スケジュールくん</title>
-  <style>
-    :root {
-      --ink: #1f2f38;
-      --muted: #526873;
-      --paper: #f8fbfd;
-      --panel: #ffffff;
-      --line: #dce8ec;
-      --aqua: #69b7c7;
-      --teal: #2f7f83;
-      --mint: #eaf8f6;
-      --sky: #eaf4fb;
-      --sun: #f5cf7a;
-      --warm: #e98c6f;
-      --warm-soft: #fff0e9;
-      --shadow: 0 22px 56px rgba(34, 49, 58, 0.12);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-      color: var(--ink);
-      background: var(--paper);
-      font-size: 18px;
-      line-height: 1.85;
-    }
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    .header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      min-height: 72px;
-      padding: 0 6vw;
-      background: rgba(248, 251, 253, 0.9);
-      border-bottom: 1px solid rgba(220, 232, 236, 0.9);
-      backdrop-filter: blur(14px);
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 900;
-      font-size: 20px;
-      white-space: nowrap;
-    }
-
-    .logo-mark {
-      display: grid;
-      place-items: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      color: #ffffff;
-      background: linear-gradient(135deg, var(--teal), var(--warm));
-      box-shadow: 0 10px 24px rgba(47, 127, 131, 0.2);
-    }
-
-    .nav {
-      display: flex;
-      gap: 22px;
-      color: var(--muted);
-      font-size: 16px;
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .nav a:hover {
-      color: var(--teal);
-    }
-
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 0.95fr) minmax(320px, 0.88fr);
-      align-items: center;
-      gap: 56px;
-      min-height: calc(100vh - 72px);
-      padding: 58px 6vw 86px;
-      background:
-        linear-gradient(130deg, rgba(105, 183, 199, 0.2), transparent 42%),
-        linear-gradient(30deg, rgba(245, 207, 122, 0.16), transparent 46%),
-        linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
-    }
-
-    .hero > div:first-child {
-      min-width: 0;
-      position: relative;
-      z-index: 2;
-    }
-
-    .tag {
-      display: inline-flex;
-      padding: 6px 12px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: #276f74;
-      background: rgba(255, 255, 255, 0.82);
-      font-size: 16px;
-      font-weight: 900;
-    }
-
-    h1 {
-      margin: 22px 0 16px;
-      font-size: clamp(36px, 5.8vw, 66px);
-      line-height: 1.04;
-      letter-spacing: 0;
-      white-space: nowrap;
-    }
-
-    .lead {
-      max-width: 620px;
-      margin: 0;
-      color: #354a52;
-      font-size: clamp(20px, 2.2vw, 24px);
-      font-weight: 700;
-    }
-
-    .catch {
-      max-width: 660px;
-      margin: 0 0 14px;
-      color: #b85743;
-      font-size: clamp(23px, 2.8vw, 34px);
-      line-height: 1.35;
-      font-weight: 900;
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 28px;
-    }
-
-    .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 56px;
-      padding: 0 22px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.8);
-      font-size: 18px;
-      font-weight: 900;
-    }
-
-    .button.primary {
-      color: #ffffff;
-      background: var(--teal);
-      border-color: var(--teal);
-      box-shadow: 0 16px 28px rgba(47, 127, 131, 0.2);
-    }
-
-    .points {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      max-width: 640px;
-      margin-top: 34px;
-    }
-
-    .point {
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.76);
-    }
-
-    .point:nth-child(1) {
-      border-top: 5px solid var(--aqua);
-    }
-
-    .point:nth-child(2) {
-      border-top: 5px solid var(--sun);
-    }
-
-    .point:nth-child(3) {
-      border-top: 5px solid var(--warm);
-    }
-
-    .point strong {
-      display: block;
-      font-size: 22px;
-      line-height: 1.35;
-    }
-
-    .point span {
-      color: var(--muted);
-      font-size: 16px;
-      font-weight: 800;
-    }
-
-    .mockup-wrap {
-      position: relative;
-      display: grid;
-      place-items: center;
-      min-height: 560px;
-      z-index: 1;
-    }
-
-    .phone {
-      width: min(390px, 92vw);
-      border: 10px solid #26312d;
-      border-radius: 32px;
-      background: #edf7f7;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-
-    .phone-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 18px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
-      font-weight: 900;
-    }
-
-    .status {
-      padding: 4px 9px;
-      border-radius: 999px;
-      color: #ffffff;
-      background: var(--warm);
-      font-size: 14px;
-    }
-
-    .screen {
-      display: grid;
-      gap: 12px;
-      padding: 16px;
-    }
-
-    .mini-card,
-    .schedule,
-    .route {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-    }
-
-    .mini-card {
-      padding: 14px;
-    }
-
-    .source {
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 900;
-    }
-
-    .detected {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: 8px;
-      font-weight: 900;
-    }
-
-    .register {
-      flex: 0 0 auto;
-      padding: 4px 10px;
-      border-radius: 7px;
-      color: #ffffff;
-      background: var(--teal);
-      font-size: 14px;
-    }
-
-    .timeline {
-      display: grid;
-      gap: 10px;
-      padding: 14px;
-    }
-
-    .event {
-      display: grid;
-      grid-template-columns: 58px 1fr;
-      gap: 12px;
-      font-size: 16px;
-      font-weight: 900;
-    }
-
-    .time {
-      color: var(--muted);
-    }
-
-    .event-text {
-      padding: 10px;
-      border-left: 5px solid var(--aqua);
-      border-radius: 8px;
-      background: var(--sky);
-    }
-
-    .event-text.free {
-      border-color: var(--sun);
-      background: #fff4ce;
-    }
-
-    .event-text.move {
-      border-color: var(--warm);
-      background: var(--warm-soft);
-    }
-
-    .route {
-      padding: 12px;
-      color: var(--muted);
-      font-size: 15px;
-      font-weight: 900;
-    }
-
-    .route div {
-      display: flex;
-      justify-content: space-between;
-      padding: 7px 0;
-      border-bottom: 1px solid #e3eeee;
-    }
-
-    .route div:last-child {
-      border-bottom: 0;
-    }
-
-    .floating {
-      position: absolute;
-      right: 0;
-      bottom: 62px;
-      width: min(230px, 42vw);
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: 0 18px 42px rgba(38, 49, 45, 0.13);
-      font-size: 16px;
-      font-weight: 900;
-    }
-
-    section {
-      padding: 76px 6vw;
-    }
-
-    .section-head {
-      max-width: 760px;
-      margin-bottom: 30px;
-    }
-
-    .eyebrow {
-      margin: 0 0 8px;
-      color: #276f74;
-      font-size: 16px;
-      font-weight: 900;
-    }
-
-    h2 {
-      margin: 0;
-      font-size: clamp(32px, 4vw, 48px);
-      line-height: 1.24;
-      letter-spacing: 0;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-    }
-
-    .benefits {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-    }
-
-    .benefit {
-      min-height: 170px;
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: 0 12px 28px rgba(38, 49, 45, 0.06);
-    }
-
-    .benefit strong {
-      display: block;
-      margin-bottom: 8px;
-      color: #276f74;
-      font-size: 26px;
-      line-height: 1.25;
-    }
-
-    .benefit p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    .benefit:nth-child(2) strong {
-      color: #a96a1b;
-    }
-
-    .benefit:nth-child(3) strong {
-      color: #b85743;
-    }
-
-    .benefit:nth-child(4) strong {
-      color: #4d7180;
-    }
-
-    .card {
-      min-height: 190px;
-      padding: 28px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      box-shadow: 0 12px 28px rgba(38, 49, 45, 0.06);
-    }
-
-    .card h3 {
-      margin: 0 0 10px;
-      font-size: 24px;
-      line-height: 1.35;
-    }
-
-    .card p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    .band {
-      background: #263b45;
-      color: #ffffff;
-    }
-
-    .band .eyebrow,
-    .band p {
-      color: #e3eef2;
-    }
-
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-    }
-
-    .step {
-      min-height: 172px;
-      padding: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.06);
-    }
-
-    .num {
-      display: inline-grid;
-      place-items: center;
-      width: 32px;
-      height: 32px;
-      margin-bottom: 16px;
-      border-radius: 8px;
-      color: #2f3d37;
-      background: var(--sun);
-      font-weight: 900;
-    }
-
-    .step h3 {
-      margin: 0 0 8px;
-      font-size: 21px;
-    }
-
-    .step p {
-      margin: 0;
-      font-size: 17px;
-      font-weight: 700;
-    }
-
-    .summary {
-      display: grid;
-      grid-template-columns: 0.95fr 1.05fr;
-      gap: 28px;
-      align-items: start;
-    }
-
-    .message {
-      padding: 28px;
-      border: 1px solid #d9e6e7;
-      border-radius: 8px;
-      background: var(--sky);
-    }
-
-    .message strong {
-      display: block;
-      margin-bottom: 10px;
-      font-size: 28px;
-      line-height: 1.35;
-    }
-
-    .list {
-      display: grid;
-      gap: 12px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    .list li {
-      padding: 17px 18px 17px 46px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      position: relative;
-      font-size: 18px;
-      font-weight: 850;
-    }
-
-    .list li::before {
-      content: "";
-      position: absolute;
-      left: 18px;
-      top: 24px;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--warm);
-    }
-
-    .cta {
-      text-align: center;
-      background:
-        linear-gradient(135deg, rgba(105, 183, 199, 0.18), rgba(245, 207, 122, 0.2)),
-        #ffffff;
-    }
-
-    .cta p {
-      max-width: 640px;
-      margin: 16px auto 28px;
-      color: var(--muted);
-      font-size: 20px;
-      font-weight: 700;
-    }
-
-    footer {
-      padding: 28px 6vw;
-      color: var(--muted);
-      border-top: 1px solid var(--line);
-      font-size: 16px;
-      font-weight: 800;
-      text-align: center;
-    }
-
-    @media (max-width: 1120px) {
-      .hero,
-      .summary {
-        grid-template-columns: 1fr;
-      }
-
-      .mockup-wrap {
-        min-height: auto;
-      }
-
-      .grid,
-      .benefits,
-      .steps {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 680px) {
-      .header {
-        align-items: flex-start;
-        flex-direction: column;
-        padding: 14px 5vw;
-      }
-
-      .nav {
-        width: 100%;
-        overflow-x: auto;
-        gap: 16px;
-      }
-
-      .hero,
-      section {
-        padding-left: 5vw;
-        padding-right: 5vw;
-      }
-
-      .points,
-      .grid,
-      .benefits,
-      .steps {
-        grid-template-columns: 1fr;
-      }
-
-      .phone {
-        width: 100%;
-        border-width: 8px;
-      }
-
-      .floating {
-        position: static;
-        width: 100%;
-        margin-top: 14px;
-      }
-    }
-  </style>
+  <title>スーパー・スケジュールくん</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="header">
-    <a class="logo" href="#top" aria-label="超スケジュールくん">
-      <span class="logo-mark">超</span>
-      <span>超スケジュールくん</span>
+    <a class="logo" href="super-schedule-kun.html" aria-label="スーパー・スケジュールくん ホーム">
+      <span class="logo-mark">S</span>
+      <span>スーパー・スケジュールくん</span>
     </a>
-    <nav class="nav" aria-label="ページ内ナビゲーション">
-      <a href="#problem">課題</a>
-      <a href="#solution">解決</a>
-      <a href="#benefits">改善</a>
-      <a href="#features">機能</a>
-      <a href="#users">対象</a>
+    <nav class="nav" aria-label="ページナビゲーション">
+      <a class="active" href="super-schedule-kun.html">ホーム</a>
+      <a href="features.html">機能</a>
+      <a href="use-cases.html">活用シーン</a>
     </nav>
   </header>
 
-  <main id="top">
+  <main>
     <section class="hero">
-      <div>
-        <span class="tag">予定整理を、もっと軽く。</span>
-        <h1>超スケジュールくん</h1>
-        <p class="catch">予定に追われる毎日を、余白のある一日に。</p>
+      <div class="hero-copy">
+        <span class="tag">予定管理を、もっと軽く。</span>
+        <h1>予定に追われる毎日を、余白のある一日に。</h1>
         <p class="lead">
-          文や画像、SNSのメッセージから予定を見つけて、ワンタッチで登録。
-          空き時間と移動時間まで整理してくれるスケジュールアプリです。
+          スーパー・スケジュールくんは、メッセージや画像から予定を見つけて、
+          登録、空き時間、移動時間までまとめて整理するスケジュールアプリです。
         </p>
-        <div class="actions">
-          <a class="button primary" href="#solution">特徴を見る</a>
-          <a class="button" href="#features">機能を見る</a>
+        <div class="hero-note">
+          <span>文章</span>
+          <span>画像</span>
+          <span>SNSメッセージ</span>
+          <span>移動時間</span>
         </div>
-        <div class="points">
-          <div class="point">
-            <strong>自動で検出</strong>
-            <span>文章や画像から予定候補を表示</span>
-          </div>
-          <div class="point">
-            <strong>空き時間が見える</strong>
-            <span>予定のすき間をすぐ確認</span>
-          </div>
-          <div class="point">
-            <strong>移動も考慮</strong>
-            <span>所要時間や混雑もチェック</span>
-          </div>
+        <div class="actions">
+          <a class="button primary" href="features.html">機能を見る</a>
+          <a class="button" href="use-cases.html">使い方を見る</a>
         </div>
       </div>
 
-      <div class="mockup-wrap" aria-label="アプリ画面イメージ">
-        <div class="phone">
-          <div class="phone-head">
-            <span>Today</span>
-            <span class="status">予定候補</span>
-          </div>
+      <div class="phone" aria-label="アプリ画面イメージ">
+        <div class="phone-head">
+          <span>Today</span>
+          <span class="status">予定候補 3件</span>
+        </div>
           <div class="screen">
             <div class="mini-card">
-              <div class="source">LINEから検出</div>
-              <div class="detected">
-                <span>18:30 渋谷で打ち合わせ</span>
-                <span class="register">登録</span>
-              </div>
+              <span class="source">LINEから検出</span>
+              <strong>18:30 渋谷で打ち合わせ</strong>
+              <span class="register">登録</span>
             </div>
-
-            <div class="schedule">
-              <div class="timeline">
-                <div class="event">
-                  <span class="time">09:00</span>
-                  <span class="event-text">講義</span>
-                </div>
-                <div class="event">
-                  <span class="time">12:10</span>
-                  <span class="event-text free">空き時間 1時間20分</span>
-                </div>
-                <div class="event">
-                  <span class="time">13:30</span>
-                  <span class="event-text">アルバイト</span>
-                </div>
-                <div class="event">
-                  <span class="time">17:45</span>
-                  <span class="event-text move">移動 電車28分 / 車42分</span>
-                </div>
-                <div class="event">
-                  <span class="time">18:30</span>
-                  <span class="event-text">打ち合わせ</span>
-                </div>
-              </div>
+          <div class="timeline">
+            <div class="event">
+              <span class="time">09:00</span>
+              <span class="event-text">講義</span>
             </div>
-
-            <div class="route">
-              <div><span>電車</span><span>28分</span></div>
-              <div><span>車</span><span>42分・混雑あり</span></div>
+            <div class="event">
+              <span class="time">12:10</span>
+              <span class="event-text free">空き時間 1時間20分</span>
+            </div>
+            <div class="event">
+              <span class="time">13:30</span>
+              <span class="event-text">アルバイト</span>
+            </div>
+            <div class="event">
+              <span class="time">17:45</span>
+              <span class="event-text move">移動: 電車28分 / 徒歩8分</span>
             </div>
           </div>
+          <div class="route-card">
+            <div><span>次の移動</span><strong>36分</strong></div>
+            <div><span>出発目安</span><strong>17:44</strong></div>
+          </div>
         </div>
-        <div class="floating">予定前に通知。登録忘れや移動の見落としを減らします。</div>
       </div>
     </section>
 
-    <section id="problem">
+    <section class="intro-strip" aria-label="サービスの特徴">
+      <div>
+        <strong>予定候補を拾う</strong>
+        <span>見落としやすい連絡から、登録できそうな予定を整理します。</span>
+      </div>
+      <div>
+        <strong>余白を見つける</strong>
+        <span>予定と予定の間にある使える時間を見やすくします。</span>
+      </div>
+      <div>
+        <strong>移動を含める</strong>
+        <span>場所が変わる予定でも、出発目安まで考えやすくします。</span>
+      </div>
+    </section>
+
+    <section class="section">
       <div class="section-head">
         <p class="eyebrow">PROBLEM</p>
-        <h2>予定が多いと、整理するだけで疲れてしまう。</h2>
+        <h2>予定が多いほど、整理だけで疲れてしまう。</h2>
       </div>
-      <div class="grid">
+      <div class="grid three">
         <article class="card">
           <h3>予定が散らばる</h3>
-          <p>連絡、画像、メモなど、予定の情報があちこちに分かれます。</p>
+          <p>連絡、画像、メモ、SNSなど、予定の情報があちこちに分かれます。</p>
         </article>
         <article class="card">
-          <h3>空き時間が分かりにくい</h3>
-          <p>予定が詰まるほど、自由に使える時間を探すのが大変です。</p>
+          <h3>空き時間が見えにくい</h3>
+          <p>予定が詰まるほど、自由に使える時間を探すのが大変になります。</p>
         </article>
         <article class="card">
           <h3>移動を忘れやすい</h3>
-          <p>場所が変わる予定では、移動時間の確認も必要になります。</p>
+          <p>場所が変わる予定では、移動時間や混雑も予定管理に必要です。</p>
         </article>
       </div>
     </section>
 
-    <section id="solution" class="band">
+    <section class="section split">
+      <div>
+        <p class="eyebrow">DESIGN POLICY</p>
+        <h2>増やすのは機能ではなく、判断しやすさ。</h2>
+      </div>
+      <div class="statement">
+        <p>
+          予定管理で本当に困るのは、予定そのものよりも「どこに書いてあったか」「いつ出ればいいか」
+          「いま使える時間がどれくらいあるか」が分からなくなる瞬間です。
+        </p>
+        <p>
+          スーパー・スケジュールくんは、予定をただ並べるだけでなく、登録前の候補、予定間の余白、
+          移動の見通しを同じ画面で扱う設計を目指しています。
+        </p>
+      </div>
+    </section>
+
+    <section class="section band">
       <div class="section-head">
         <p class="eyebrow">SOLUTION</p>
-        <h2>入力の手間を減らし、予定全体を見やすく整える。</h2>
+        <h2>入力の手間を減らし、一日の流れを見やすく整えます。</h2>
       </div>
       <div class="steps">
         <article class="step">
           <span class="num">1</span>
-          <h3>予定を見つける</h3>
-          <p>文章や画像から日時・場所・内容を読み取ります。</p>
+          <h3>予定を検出</h3>
+          <p>文章や画像から日時、場所、内容を読み取ります。</p>
         </article>
         <article class="step">
           <span class="num">2</span>
-          <h3>候補を出す</h3>
-          <p>LINEなどのSNS連携で、予定候補を自動表示します。</p>
+          <h3>候補を提案</h3>
+          <p>登録できそうな予定だけを候補として表示します。</p>
         </article>
         <article class="step">
           <span class="num">3</span>
-          <h3>ワンタッチ登録</h3>
-          <p>ユーザーは登録するか選ぶだけで完了します。</p>
+          <h3>ワンタップ登録</h3>
+          <p>ユーザーは確認して登録するだけで完了します。</p>
         </article>
         <article class="step">
           <span class="num">4</span>
-          <h3>移動と通知</h3>
-          <p>移動時間、混雑、予定前の通知まで確認できます。</p>
+          <h3>移動も整理</h3>
+          <p>移動時間や通知まで含めて一日を組み立てます。</p>
         </article>
       </div>
     </section>
 
-    <section id="benefits">
-      <div class="section-head">
-        <p class="eyebrow">BENEFITS</p>
-        <h2>使うほど、予定管理の負担が軽くなる。</h2>
-      </div>
-      <div class="benefits">
-        <article class="benefit">
-          <strong>時間を節約</strong>
-          <p>予定を手入力する時間を減らし、整理の手間を短縮できます。</p>
-        </article>
-        <article class="benefit">
-          <strong>空き時間を発見</strong>
-          <p>予定のすき間が見えるので、休憩や作業時間を確保しやすくなります。</p>
-        </article>
-        <article class="benefit">
-          <strong>忘れを防止</strong>
-          <p>予定前の通知で、登録忘れや見落としを減らせます。</p>
-        </article>
-        <article class="benefit">
-          <strong>移動も安心</strong>
-          <p>所要時間や混雑が分かり、予定に間に合う判断がしやすくなります。</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="features">
-      <div class="section-head">
-        <p class="eyebrow">FEATURES</p>
-        <h2>毎日の予定管理に必要なことを、ひとつに。</h2>
-      </div>
-      <div class="summary">
-        <div class="message">
-          <strong>「この予定、入れておく？」とアプリが聞いてくれる。</strong>
-          <p>
-            超スケジュールくんは、予定候補を自動で見つけて提案します。
-            登録後は空き時間や移動時間も反映されるので、1日の流れがすぐ分かります。
-          </p>
-        </div>
-        <ul class="list">
-          <li>文・画像・SNSメッセージから予定候補を検出</li>
-          <li>予定表への登録はワンタッチ</li>
-          <li>空き時間を分かりやすく表示</li>
-          <li>移動方法ごとの所要時間を表示</li>
-          <li>渋滞情報や予定前通知にも対応</li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="users" class="cta">
-      <p class="eyebrow">FOR WHOM</p>
-      <h2>マルチタスクな社会人や学生に。</h2>
-      <p>
-        授業、バイト、会議、遊び、移動、締切。
-        予定が多い人の毎日を、少し身軽にするアプリです。
-      </p>
-      <a class="button primary" href="#top">上へ戻る</a>
+    <section class="section cta">
+      <h2>機能と使い方を、3ページで確認できます。</h2>
+      <p>このトップページでは全体像を紹介しています。具体的な機能は次のページにまとめました。</p>
+      <a class="button primary" href="features.html">機能ページへ</a>
     </section>
   </main>
 
   <footer>
-    超スケジュールくん | 予定整理を、もっと軽く。
+    スーパー・スケジュールくん | 予定管理を、もっと軽く。
   </footer>
 </body>
 </html>
