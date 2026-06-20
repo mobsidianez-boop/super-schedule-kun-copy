@@ -316,8 +316,7 @@
             .from("messages")
             .insert({
               name,
-              body,
-              content: body
+              body
             });
 
           if (error) {
