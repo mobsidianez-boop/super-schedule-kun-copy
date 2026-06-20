@@ -164,10 +164,130 @@
       <p>このトップページでは全体像を紹介しています。具体的な機能は次のページにまとめました。</p>
       <a class="button primary" href="features.html">機能ページへ</a>
     </section>
+
+    <section class="section bulletin" aria-labelledby="bulletin-title">
+      <div class="section-head">
+        <p class="eyebrow">BOARD</p>
+        <h2 id="bulletin-title">ひとこと掲示板</h2>
+        <p class="board-intro">名前とメッセージを入れて送信すると、このページの下に新しい順で表示されます。</p>
+      </div>
+
+      <form class="bulletin-form" id="bulletin-form">
+        <label>
+          <span>名前</span>
+          <input id="bulletin-name" name="name" type="text" maxlength="24" placeholder="例: 田中" required>
+        </label>
+        <label>
+          <span>メッセージ</span>
+          <textarea id="bulletin-message" name="message" maxlength="160" rows="4" placeholder="ひとことどうぞ" required></textarea>
+        </label>
+        <button class="button primary" type="submit">送信する</button>
+      </form>
+
+      <div class="bulletin-list-wrap">
+        <div class="bulletin-list-head">
+          <h3>投稿一覧</h3>
+          <span id="bulletin-count">0件</span>
+        </div>
+        <ul class="bulletin-list" id="bulletin-list" aria-live="polite"></ul>
+      </div>
+    </section>
   </main>
 
   <footer>
     スーパー・スケジュールくん | 予定管理を、もっと軽く。
   </footer>
+  <script>
+    (() => {
+      const storageKey = "superScheduleKunBulletinPosts";
+      const form = document.querySelector("#bulletin-form");
+      const nameInput = document.querySelector("#bulletin-name");
+      const messageInput = document.querySelector("#bulletin-message");
+      const list = document.querySelector("#bulletin-list");
+      const count = document.querySelector("#bulletin-count");
+
+      const getPosts = () => {
+        try {
+          return JSON.parse(localStorage.getItem(storageKey)) || [];
+        } catch {
+          return [];
+        }
+      };
+
+      const savePosts = (posts) => {
+        localStorage.setItem(storageKey, JSON.stringify(posts));
+      };
+
+      const formatDate = (dateText) => {
+        const date = new Date(dateText);
+        return new Intl.DateTimeFormat("ja-JP", {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(date);
+      };
+
+      const renderPosts = () => {
+        const posts = getPosts().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        list.replaceChildren();
+        count.textContent = `${posts.length}件`;
+
+        if (posts.length === 0) {
+          const empty = document.createElement("li");
+          empty.className = "bulletin-empty";
+          empty.textContent = "まだ投稿はありません。最初のひとことをどうぞ。";
+          list.append(empty);
+          return;
+        }
+
+        posts.forEach((post) => {
+          const item = document.createElement("li");
+          item.className = "bulletin-post";
+
+          const meta = document.createElement("div");
+          meta.className = "bulletin-meta";
+
+          const name = document.createElement("strong");
+          name.textContent = post.name;
+
+          const time = document.createElement("time");
+          time.dateTime = post.createdAt;
+          time.textContent = formatDate(post.createdAt);
+
+          const message = document.createElement("p");
+          message.textContent = post.message;
+
+          meta.append(name, time);
+          item.append(meta, message);
+          list.append(item);
+        });
+      };
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const name = nameInput.value.trim();
+        const message = messageInput.value.trim();
+
+        if (!name || !message) {
+          return;
+        }
+
+        const posts = getPosts();
+        posts.unshift({
+          id: crypto.randomUUID(),
+          name,
+          message,
+          createdAt: new Date().toISOString()
+        });
+
+        savePosts(posts.slice(0, 50));
+        form.reset();
+        renderPosts();
+      });
+
+      renderPosts();
+    })();
+  </script>
 </body>
 </html>
