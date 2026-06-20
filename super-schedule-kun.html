@@ -257,7 +257,7 @@
           time.textContent = formatDate(post.created_at);
 
           const message = document.createElement("p");
-          message.textContent = post.body || "";
+          message.textContent = post.body || post.content || "";
 
           meta.append(name, time);
           item.append(meta, message);
@@ -277,8 +277,7 @@
         setStatus("投稿を読み込んでいます。");
         const { data, error } = await supabase
           .from("messages")
-          .select("id, name, body, created_at")
-          .not("body", "is", null)
+          .select("id, name, body, content, created_at")
           .order("created_at", { ascending: false })
           .limit(100);
 
@@ -316,7 +315,8 @@
             .from("messages")
             .insert({
               name,
-              body
+              body,
+              content: body
             });
 
           if (error) {
