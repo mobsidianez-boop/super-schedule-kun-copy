@@ -228,6 +228,7 @@
 
     const SUPABASE_URL = "https://ealykpoepyqpuxtfqabf.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_lo7QUF2qKnhf7GLBjyz1lw_eu0fhF5l";
+    const AUTH_REDIRECT_URL = "https://mobsidianez-boop.github.io/super-schedule-kun-copy/super-schedule-kun.html";
 
     (() => {
       const MAX_NAME_LENGTH = 24;
@@ -424,7 +425,13 @@
         }
 
         setAuthStatus("登録しています。");
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: AUTH_REDIRECT_URL
+          }
+        });
 
         if (error) {
           setAuthStatus(`登録できませんでした: ${getErrorMessage(error)}`, "error");
@@ -436,7 +443,7 @@
           return;
         }
 
-        setAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。", "success");
+        setAuthStatus("確認メールを送信しました。メール内のリンクを開くと、このページに戻ります。", "success");
       });
 
       logoutButton.addEventListener("click", async () => {
