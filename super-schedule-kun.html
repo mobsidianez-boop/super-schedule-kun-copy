@@ -185,6 +185,7 @@
           <div class="auth-actions">
             <button class="button primary" type="submit" data-auth-action="login">ログイン</button>
             <button class="button" type="button" id="signup-button">新規登録</button>
+            <button class="button" type="button" id="resend-button">確認メールを再送</button>
           </div>
         </form>
         <div class="auth-session" id="auth-session" hidden>
@@ -242,6 +243,7 @@
       const authEmailInput = document.querySelector("#auth-email");
       const authPasswordInput = document.querySelector("#auth-password");
       const signupButton = document.querySelector("#signup-button");
+      const resendButton = document.querySelector("#resend-button");
       const logoutButton = document.querySelector("#logout-button");
       const authSession = document.querySelector("#auth-session");
       const authEmailDisplay = document.querySelector("#auth-email-display");
@@ -443,7 +445,32 @@
           return;
         }
 
-        setAuthStatus("確認メールを送信しました。メール内のリンクを開くと、このページに戻ります。", "success");
+        setAuthStatus("確認メールを送信しました。届かない場合は迷惑メールを確認するか、確認メールを再送してください。", "success");
+      });
+
+      resendButton.addEventListener("click", async () => {
+        const email = authEmailInput.value.trim();
+
+        if (!email) {
+          setAuthStatus("確認メールを再送するメールアドレスを入力してください。", "warning");
+          return;
+        }
+
+        setAuthStatus("確認メールを再送しています。");
+        const { error } = await supabase.auth.resend({
+          type: "signup",
+          email,
+          options: {
+            emailRedirectTo: AUTH_REDIRECT_URL
+          }
+        });
+
+        if (error) {
+          setAuthStatus(`確認メールを再送できませんでした: ${getErrorMessage(error)}`, "error");
+          return;
+        }
+
+        setAuthStatus("確認メールを再送しました。届かない場合はSupabaseのメール送信設定と迷惑メールフォルダを確認してください。", "success");
       });
 
       logoutButton.addEventListener("click", async () => {
