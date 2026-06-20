@@ -205,6 +205,8 @@
     const SUPABASE_ANON_KEY = "sb_publishable_JU-uguITndR8dzhEsXFCvw_nmWGu-wq";
 
     (() => {
+      const MAX_NAME_LENGTH = 24;
+      const MAX_BODY_LENGTH = 160;
       const form = document.querySelector("#bulletin-form");
       const nameInput = document.querySelector("#bulletin-name");
       const messageInput = document.querySelector("#bulletin-message");
@@ -248,14 +250,14 @@
           meta.className = "bulletin-meta";
 
           const name = document.createElement("strong");
-          name.textContent = post.name;
+          name.textContent = post.name || "匿名";
 
           const time = document.createElement("time");
           time.dateTime = post.created_at;
           time.textContent = formatDate(post.created_at);
 
           const message = document.createElement("p");
-          message.textContent = post.body;
+          message.textContent = post.body || "";
 
           meta.append(name, time);
           item.append(meta, message);
@@ -277,7 +279,8 @@
           .from("messages")
           .select("id, name, body, created_at")
           .not("body", "is", null)
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(100);
 
         if (error) {
           setStatus(`投稿を読み込めませんでした: ${getErrorMessage(error)}`, "error");
@@ -295,6 +298,12 @@
         const body = messageInput.value.trim();
 
         if (!name || !body) {
+          setStatus("名前とメッセージを入力してください。", "warning");
+          return;
+        }
+
+        if (name.length > MAX_NAME_LENGTH || body.length > MAX_BODY_LENGTH) {
+          setStatus(`名前は${MAX_NAME_LENGTH}文字以内、メッセージは${MAX_BODY_LENGTH}文字以内で入力してください。`, "warning");
           return;
         }
 
