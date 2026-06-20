@@ -264,6 +264,14 @@
         });
       };
 
+      const getErrorMessage = (error) => {
+        if (!error) {
+          return "原因不明のエラーです。";
+        }
+
+        return error.message || error.details || String(error);
+      };
+
       const loadPosts = async () => {
         if (!supabase) {
           form.querySelector("button").disabled = true;
@@ -276,10 +284,11 @@
         const { data, error } = await supabase
           .from("messages")
           .select("id, name, body, created_at")
+          .not("body", "is", null)
           .order("created_at", { ascending: false });
 
         if (error) {
-          setStatus("投稿を読み込めませんでした。Supabase のテーブル設定を確認してください。", "error");
+          setStatus(`投稿を読み込めませんでした: ${getErrorMessage(error)}`, "error");
           renderPosts([]);
           return;
         }
@@ -301,26 +310,31 @@
           return;
         }
 
-        form.querySelector("button").disabled = true;
+        const submitButton = form.querySelector("button");
+        submitButton.disabled = true;
         setStatus("送信しています。");
 
-        const { error } = await supabase
-          .from("messages")
-          .insert({
-            name,
-            body
-          });
+        try {
+          const { error } = await supabase
+            .from("messages")
+            .insert({
+              name,
+              body
+            });
 
-        form.querySelector("button").disabled = false;
+          if (error) {
+            setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
+            return;
+          }
 
-        if (error) {
-          setStatus("送信できませんでした。Supabase の insert 権限を確認してください。", "error");
-          return;
+          setStatus("投稿しました。", "success");
+          form.reset();
+          await loadPosts();
+        } catch (error) {
+          setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
+        } finally {
+          submitButton.disabled = false;
         }
-
-        setStatus("投稿しました。", "success");
-        form.reset();
-        await loadPosts();
       });
 
       loadPosts();
