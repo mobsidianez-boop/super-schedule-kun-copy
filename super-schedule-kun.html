@@ -201,8 +201,8 @@
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-    const SUPABASE_URL = "https://kcfnhhcoasgculonbbtx.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_JU-uguITndR8dzhEsXFCvw_nmWGu-wq";
+    const SUPABASE_URL = "https://ealykpoepyqpuxtfqabf.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_lo7QUF2qKnhf7GLBjyz1lw_eu0fhF5l";
 
     (() => {
       const MAX_NAME_LENGTH = 24;
@@ -316,7 +316,8 @@
             .from("messages")
             .insert({
               name,
-              body
+              body,
+              content: body
             });
 
           if (error) {
