@@ -763,6 +763,35 @@ h3 {
   list-style: none;
 }
 
+.bulletin-status {
+  margin: 0;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  background: rgba(234, 248, 246, 0.58);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.bulletin-status[data-tone="success"] {
+  color: #276f74;
+}
+
+.bulletin-status[data-tone="warning"] {
+  color: #8a6517;
+  background: #fff4ce;
+}
+
+.bulletin-status[data-tone="error"] {
+  color: #b85743;
+  background: var(--warm-soft);
+}
+
+.bulletin-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .bulletin-post,
 .bulletin-empty {
   padding: 22px;

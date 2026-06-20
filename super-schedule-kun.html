@@ -169,7 +169,7 @@
       <div class="section-head">
         <p class="eyebrow">BOARD</p>
         <h2 id="bulletin-title">ひとこと掲示板</h2>
-        <p class="board-intro">名前とメッセージを入れて送信すると、このページの下に新しい順で表示されます。</p>
+        <p class="board-intro">名前とメッセージを入れて送信すると、みんなの投稿がこのページの下に新しい順で表示されます。</p>
       </div>
 
       <form class="bulletin-form" id="bulletin-form">
@@ -189,6 +189,7 @@
           <h3>投稿一覧</h3>
           <span id="bulletin-count">0件</span>
         </div>
+        <p class="bulletin-status" id="bulletin-status">読み込み中です。</p>
         <ul class="bulletin-list" id="bulletin-list" aria-live="polite"></ul>
       </div>
     </section>
@@ -197,25 +198,25 @@
   <footer>
     スーパー・スケジュールくん | 予定管理を、もっと軽く。
   </footer>
-  <script>
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    const SUPABASE_URL = "YOUR_SUPABASE_URL";
+    const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+
     (() => {
-      const storageKey = "superScheduleKunBulletinPosts";
       const form = document.querySelector("#bulletin-form");
       const nameInput = document.querySelector("#bulletin-name");
       const messageInput = document.querySelector("#bulletin-message");
       const list = document.querySelector("#bulletin-list");
       const count = document.querySelector("#bulletin-count");
+      const status = document.querySelector("#bulletin-status");
+      const isConfigured = !SUPABASE_URL.includes("YOUR_") && !SUPABASE_ANON_KEY.includes("YOUR_");
+      const supabase = isConfigured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-      const getPosts = () => {
-        try {
-          return JSON.parse(localStorage.getItem(storageKey)) || [];
-        } catch {
-          return [];
-        }
-      };
-
-      const savePosts = (posts) => {
-        localStorage.setItem(storageKey, JSON.stringify(posts));
+      const setStatus = (message, tone = "muted") => {
+        status.textContent = message;
+        status.dataset.tone = tone;
       };
 
       const formatDate = (dateText) => {
@@ -228,8 +229,7 @@
         }).format(date);
       };
 
-      const renderPosts = () => {
-        const posts = getPosts().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const renderPosts = (posts) => {
         list.replaceChildren();
         count.textContent = `${posts.length}件`;
 
@@ -252,11 +252,11 @@
           name.textContent = post.name;
 
           const time = document.createElement("time");
-          time.dateTime = post.createdAt;
-          time.textContent = formatDate(post.createdAt);
+          time.dateTime = post.created_at;
+          time.textContent = formatDate(post.created_at);
 
           const message = document.createElement("p");
-          message.textContent = post.message;
+          message.textContent = post.body;
 
           meta.append(name, time);
           item.append(meta, message);
@@ -264,29 +264,66 @@
         });
       };
 
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const name = nameInput.value.trim();
-        const message = messageInput.value.trim();
-
-        if (!name || !message) {
+      const loadPosts = async () => {
+        if (!supabase) {
+          form.querySelector("button").disabled = true;
+          setStatus("Supabase の URL と公開キーを設定すると、みんなの掲示板として使えます。", "warning");
+          renderPosts([]);
           return;
         }
 
-        const posts = getPosts();
-        posts.unshift({
-          id: crypto.randomUUID(),
-          name,
-          message,
-          createdAt: new Date().toISOString()
-        });
+        setStatus("投稿を読み込んでいます。");
+        const { data, error } = await supabase
+          .from("messages")
+          .select("id, name, body, created_at")
+          .order("created_at", { ascending: false });
 
-        savePosts(posts.slice(0, 50));
+        if (error) {
+          setStatus("投稿を読み込めませんでした。Supabase のテーブル設定を確認してください。", "error");
+          renderPosts([]);
+          return;
+        }
+
+        setStatus("最新の投稿を表示しています。", "success");
+        renderPosts(data || []);
+      };
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!supabase) {
+          return;
+        }
+
+        const name = nameInput.value.trim();
+        const body = messageInput.value.trim();
+
+        if (!name || !body) {
+          return;
+        }
+
+        form.querySelector("button").disabled = true;
+        setStatus("送信しています。");
+
+        const { error } = await supabase
+          .from("messages")
+          .insert({
+            name,
+            body
+          });
+
+        form.querySelector("button").disabled = false;
+
+        if (error) {
+          setStatus("送信できませんでした。Supabase の insert 権限を確認してください。", "error");
+          return;
+        }
+
+        setStatus("投稿しました。", "success");
         form.reset();
-        renderPosts();
+        await loadPosts();
       });
 
-      renderPosts();
+      loadPosts();
     })();
   </script>
 </body>
