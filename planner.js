@@ -1,7 +1,7 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
-  const ACCESS_CODE = String.fromCharCode(78, 111, 67, 111, 100, 101, 84, 101, 115, 116);
+  const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
   const CONFIG = window.SUPER_SCHEDULE_CONFIG || {};
@@ -78,6 +78,7 @@
   viewDateInput.value = today;
   startInput.value = "10:00";
   endInput.value = "11:00";
+  attachActionAnimations();
   initPlannerAccess();
 
   form.addEventListener("submit", async (event) => {
@@ -204,6 +205,32 @@
     plannerCodeButton.addEventListener("click", unlockWithCode);
   }
 
+  function attachActionAnimations() {
+    document.addEventListener("click", (event) => {
+      const target = event.target.closest("button, .button, .timeline-delete, .schedule-event, .route-list li[role='button']");
+      if (!target) {
+        return;
+      }
+      animateElement(target, "action-pop", 420);
+    });
+  }
+
+  function animateGate(className) {
+    if (plannerGate) {
+      animateElement(plannerGate, className, 520);
+    }
+  }
+
+  function animateElement(element, className, duration = 520) {
+    if (!element || !element.classList) {
+      return;
+    }
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
+    window.setTimeout(() => element.classList.remove(className), duration);
+  }
+
   async function initPlannerAccess() {
     lockPlanner();
 
@@ -234,6 +261,7 @@
   async function loginPlanner() {
     if (!plannerSupabase) {
       setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "error");
+      animateGate("gate-shake");
       return;
     }
 
@@ -241,6 +269,7 @@
     const password = plannerAuthPassword.value;
     if (!email || !password) {
       setPlannerAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+      animateGate("gate-shake");
       return;
     }
 
@@ -248,6 +277,7 @@
     const { data, error } = await plannerSupabase.auth.signInWithPassword({ email, password });
     if (error) {
       setPlannerAuthStatus(`ログインできませんでした: ${getErrorText(error)}`, "error");
+      animateGate("gate-shake");
       return;
     }
     if (data.session) {
@@ -258,6 +288,7 @@
   async function signupPlanner() {
     if (!plannerSupabase) {
       setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "error");
+      animateGate("gate-shake");
       return;
     }
 
@@ -265,6 +296,7 @@
     const password = plannerAuthPassword.value;
     if (!email || !password) {
       setPlannerAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+      animateGate("gate-shake");
       return;
     }
 
@@ -279,6 +311,7 @@
 
     if (error) {
       setPlannerAuthStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
+      animateGate("gate-shake");
       return;
     }
 
@@ -293,6 +326,7 @@
   function unlockWithCode() {
     if (plannerAccessCode.value.trim() !== ACCESS_CODE) {
       setPlannerAuthStatus("テストコードが違います。", "error");
+      animateGate("gate-shake");
       return;
     }
     localStorage.setItem(ACCESS_KEY, ACCESS_CODE);
@@ -302,9 +336,11 @@
   function lockPlanner() {
     plannerUnlocked = false;
     if (plannerGate) {
+      plannerGate.classList.remove("gate-unlock", "gate-shake");
       plannerGate.hidden = false;
     }
     if (plannerApp) {
+      plannerApp.classList.remove("app-reveal");
       plannerApp.hidden = true;
     }
     setPlannerAuthStatus("予定アプリはログイン後に使えます。", "warning");
@@ -313,10 +349,16 @@
   function unlockPlanner(message) {
     plannerUnlocked = true;
     if (plannerGate) {
-      plannerGate.hidden = true;
+      animateElement(plannerGate, "gate-unlock", 520);
+      window.setTimeout(() => {
+        if (plannerUnlocked && plannerGate) {
+          plannerGate.hidden = true;
+        }
+      }, 360);
     }
     if (plannerApp) {
       plannerApp.hidden = false;
+      animateElement(plannerApp, "app-reveal", 620);
     }
     setPlannerAuthStatus(message, "success");
     pruneExpiredEvents();
