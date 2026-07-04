@@ -379,7 +379,8 @@
 
     const base = new Date();
     const detectedDate = detectDate(scheduleText, base);
-    const detectedStart = detectTime(scheduleText);
+    const detectedRange = detectTimeRange(scheduleText);
+    const detectedStart = detectedRange.start || detectTime(scheduleText);
     if (!detectedDate && !detectedStart) {
       setDetectMessage("予定の候補には日付か時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
       return null;
@@ -388,7 +389,7 @@
     const date = detectedDate || toDateInputValue(base);
     const start = detectedStart || "10:00";
     const startMinutes = timeToMinutes(start);
-    const end = minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
+    const end = detectedRange.end || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
     const location = detectLocation(scheduleText);
     const title = detectTitle(scheduleText, location);
     if (!title || title === location) {
@@ -440,19 +441,35 @@
   }
 
   function hasTimeSignal(text) {
-    return /([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)|([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/.test(text);
+    return /(?:午前|午後)?\s*([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)|(?:午前|午後)?\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/.test(text);
   }
 
   function hasEventWord(text) {
-    return /(会議|打ち合わせ|ミーティング|面談|面接|予約|集合|待ち合わせ|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/.test(text);
+    return /(会議|打ち合わせ|ミーティング|面談|面接|予約|集合|待ち合わせ|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤|誕生日|パーティー?)/.test(text);
   }
 
   function normalizeScheduleText(value) {
-    return String(value || "")
+    let text = String(value || "")
       .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
       .replace(/[：]/g, ":")
       .replace(/[．]/g, ".")
       .replace(/[／]/g, "/")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    while (/(\d)\s+(?=\d)/.test(text)) {
+      text = text.replace(/(\d)\s+(?=\d)/g, "$1");
+    }
+
+    while (/([一-龯ぁ-んァ-ヶー])\s+(?=[一-龯ぁ-んァ-ヶー])/.test(text)) {
+      text = text.replace(/([一-龯ぁ-んァ-ヶー])\s+(?=[一-龯ぁ-んァ-ヶー])/g, "$1");
+    }
+
+    return text
+      .replace(/(午前|午後)\s*(\d{1,2})\s*時\s*([0-5]?\d)\s*分/g, "$1$2時$3分")
+      .replace(/(\d{1,2})\s*時\s*([0-5]?\d)\s*分/g, "$1時$2分")
+      .replace(/(午前|午後)\s*(\d{1,2})\s*時/g, "$1$2時")
+      .replace(/(\d{1,2})\s*時/g, "$1時")
       .replace(/(\d)\s*[:.]\s*(\d{2})/g, "$1:$2")
       .replace(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, "$1月$2日")
       .replace(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, "$1年$2月$3日");
@@ -1058,17 +1075,65 @@
   }
 
   function detectTime(text) {
-    const colon = text.match(/([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)/);
+    const normalized = normalizeScheduleText(text);
+    const meridiem = normalized.match(/(午前|午後)\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/);
+    if (meridiem) {
+      return formatParsedTime(meridiem[1], meridiem[2], meridiem[3]);
+    }
+
+    const colonMeridiem = normalized.match(/(午前|午後)\s*([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)/);
+    if (colonMeridiem) {
+      return formatParsedTime(colonMeridiem[1], colonMeridiem[2], colonMeridiem[3]);
+    }
+
+    const colon = normalized.match(/([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)/);
     if (colon) {
       return `${colon[1].padStart(2, "0")}:${colon[2]}`;
     }
 
-    const japanese = text.match(/([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/);
+    const japanese = normalized.match(/([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/);
     if (japanese) {
       return `${japanese[1].padStart(2, "0")}:${(japanese[2] || "00").padStart(2, "0")}`;
     }
 
     return "";
+  }
+
+  function detectTimeRange(text) {
+    const normalized = normalizeScheduleText(text);
+    const japaneseRange = normalized.match(/(午前|午後)?\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?\s*(?:から|〜|～|-|－)\s*(午前|午後)?\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/);
+    if (japaneseRange) {
+      const startPeriod = japaneseRange[1] || japaneseRange[4] || "";
+      const endPeriod = japaneseRange[4] || japaneseRange[1] || "";
+      return {
+        start: formatParsedTime(startPeriod, japaneseRange[2], japaneseRange[3]),
+        end: formatParsedTime(endPeriod, japaneseRange[5], japaneseRange[6]),
+      };
+    }
+
+    const colonRange = normalized.match(/(午前|午後)?\s*([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)\s*(?:から|〜|～|-|－)\s*(午前|午後)?\s*([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)/);
+    if (colonRange) {
+      const startPeriod = colonRange[1] || colonRange[4] || "";
+      const endPeriod = colonRange[4] || colonRange[1] || "";
+      return {
+        start: formatParsedTime(startPeriod, colonRange[2], colonRange[3]),
+        end: formatParsedTime(endPeriod, colonRange[5], colonRange[6]),
+      };
+    }
+
+    return { start: "", end: "" };
+  }
+
+  function formatParsedTime(period, hourValue, minuteValue) {
+    let hour = Number(hourValue);
+    const minute = String(minuteValue || "00").padStart(2, "0");
+    if (period === "午後" && hour < 12) {
+      hour += 12;
+    }
+    if (period === "午前" && hour === 12) {
+      hour = 0;
+    }
+    return `${String(hour).padStart(2, "0")}:${minute}`;
   }
 
   function detectLocation(text) {
@@ -1078,12 +1143,17 @@
       return cleanLocation(explicit[1]);
     }
 
-    const atPlace = normalized.match(/([^\s、。でに]{2,32})(?:で|にて)/);
+    const addressAtPlace = normalized.match(/((?:[^、。でに]{1,16}[都道府県])?[^、。でに]{1,16}[市区町村][^、。でに]{0,24}の[^、。でに]{2,24})(?:で|にて)/);
+    if (addressAtPlace) {
+      return cleanLocation(addressAtPlace[1]);
+    }
+
+    const atPlace = normalized.match(/([^\s、。でに]{2,48})(?:で|にて)/);
     if (atPlace) {
       return cleanLocation(atPlace[1]);
     }
 
-    const suffixPlace = normalized.match(/([^\s、。]{1,24}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
+    const suffixPlace = normalized.match(/([^\s、。]{1,32}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
     return cleanLocation(suffixPlace ? suffixPlace[1] : "");
   }
 
@@ -1092,13 +1162,15 @@
       .replace(/月曜|火曜|水曜|木曜|金曜|土曜|日曜|[月火水木金土日]曜日/g, "")
       .replace(location, "")
       .replace(/場所[:：]?|会場[:：]?|集合場所[:：]?|行き先[:：]?/g, "")
-      .replace(/で|にて|集合|予定|予約/g, " ")
+      .replace(/で|にて|集合|予定|予約|から|まで/g, " ")
+      .replace(/^(の|に|を|が|は)+/, "")
+      .replace(/をする|する|開催/g, " ")
       .replace(/よろしく|お願いします|です|ます/g, " ")
       .replace(/[、。]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
-    const eventWord = withoutDate.match(/(会議|打ち合わせ|ミーティング|面談|面接|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/);
+    const eventWord = withoutDate.match(/(誕生日パーティー?|誕生日|パーティー?|会議|打ち合わせ|ミーティング|面談|面接|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/);
     return cleanText(eventWord ? eventWord[1] : withoutDate, 48);
   }
 
@@ -1108,8 +1180,8 @@
       .replace(/20\d{2}年\d{1,2}月\d{1,2}日/g, " ")
       .replace(/\d{1,2}[\/.\-]\d{1,2}/g, " ")
       .replace(/\d{1,2}月\d{1,2}日/g, " ")
-      .replace(/([01]?\d|2[0-3])[:.][0-5]\d/g, " ")
-      .replace(/([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g, " ")
+      .replace(/(?:午前|午後)?\s*([01]?\d|2[0-3])[:.][0-5]\d/g, " ")
+      .replace(/(?:午前|午後)?\s*([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g, " ")
       .replace(/明後日|あさって|明日|あした|今日|きょう/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -1119,7 +1191,7 @@
     return cleanText(value, 48)
       .replace(/^(場所|会場|集合場所|行き先)[:：]?/, "")
       .replace(/^(は|が|を|に)/, "")
-      .replace(/(で|にて|集合|予定|予約).*$/, "")
+      .replace(/(で|にて|集合|予定|予約|から|まで).*$/, "")
       .trim();
   }
 
