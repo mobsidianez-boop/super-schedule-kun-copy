@@ -596,6 +596,8 @@
       window.clearTimeout(cloudSyncTimer);
       cloudSyncTimer = null;
     }
+    const shouldClearTestEvents = plannerStorageMode === "test";
+    const testEventsKey = shouldClearTestEvents ? getLocalEventsKey() : "";
     if (plannerStorageMode === "user") {
       await syncCloudEventsNow();
     }
@@ -603,6 +605,10 @@
       await plannerSupabase.auth.signOut();
     }
     localStorage.removeItem(ACCESS_KEY);
+    if (shouldClearTestEvents && testEventsKey) {
+      localStorage.removeItem(testEventsKey);
+      events = [];
+    }
     stopPlannerRuntime();
     lockPlanner();
     setPlannerAuthStatus("ログアウトしました。もう一度使うにはログインしてください。", "success");
