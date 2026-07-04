@@ -404,27 +404,37 @@ h3 {
 .phone-current-dot {
   left: 28px;
   top: 38px;
-  width: 22px;
+  width: 24px;
   height: 22px;
   border: 2px solid #ffffff;
-  border-radius: 999px 999px 999px 8px;
+  border-radius: 999px;
   background: #8b6cff;
   box-shadow: 0 6px 14px rgba(91, 65, 190, 0.28);
-  transform: rotate(-45deg);
-  animation: currentPinWalk 980ms ease-in-out infinite;
+  animation: currentCharacterWalk 920ms ease-in-out infinite;
 }
 
 .phone-current-dot::before {
   content: "";
   position: absolute;
-  left: 6px;
-  top: 7px;
-  width: 2px;
-  height: 3px;
+  left: 7px;
+  top: 8px;
+  width: 3px;
+  height: 4px;
   border-radius: 999px;
   background: #201b3f;
-  box-shadow: 6px 0 0 #201b3f;
-  transform: rotate(45deg);
+  box-shadow: 7px 0 0 #201b3f;
+}
+
+.phone-current-dot::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  bottom: -4px;
+  width: 5px;
+  height: 3px;
+  border-radius: 999px;
+  background: #6f4de2;
+  box-shadow: 8px 0 0 #6f4de2;
 }
 
 .phone-event-dot {
@@ -472,7 +482,11 @@ h3 {
   gap: 6px;
 }
 
-.phone-legend .legend-current,
+.phone-legend .legend-current {
+  transform: scale(0.78);
+  transform-origin: center;
+}
+
 .phone-legend .legend-event {
   transform: scale(0.72) rotate(-45deg);
   transform-origin: center;
@@ -1106,39 +1120,70 @@ h3 {
   background: var(--sky);
 }
 
-.current-position-pin {
-  width: 36px;
-  height: 36px;
-  border-radius: 999px 999px 999px 12px;
-  background: #8b6cff;
-  border: 3px solid #ffffff;
-  box-shadow: 0 8px 18px rgba(91, 65, 190, 0.3);
-  transform: rotate(-45deg);
-  animation: currentPinWalk 980ms ease-in-out infinite;
-  transform-origin: 50% 78%;
+.current-position-character-icon {
+  background: transparent;
+  border: 0;
 }
 
-.current-position-pin::before {
+.current-position-character {
+  position: relative;
+  display: block;
+  width: 38px;
+  height: 34px;
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  background: #8b6cff;
+  box-shadow: 0 8px 18px rgba(91, 65, 190, 0.3);
+  animation: currentCharacterWalk 920ms ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+.current-position-character::after {
   content: "";
   position: absolute;
-  left: 10px;
-  top: 11px;
-  width: 4px;
-  height: 6px;
-  border-radius: 999px;
-  background: #201b3f;
-  box-shadow: 10px 0 0 #201b3f;
-  transform: rotate(45deg);
+  left: 15px;
+  bottom: -10px;
+  width: 8px;
+  height: 10px;
+  border-radius: 0 0 999px 999px;
+  background: #8b6cff;
+  box-shadow: 0 4px 8px rgba(91, 65, 190, 0.2);
 }
 
-.current-position-pin span {
-  display: block;
-  width: 9px;
-  height: 9px;
-  margin: 5px 0 0 17px;
+.character-eye {
+  position: absolute;
+  top: 12px;
+  width: 5px;
+  height: 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.42);
-  transform: rotate(45deg);
+  background: #201b3f;
+}
+
+.character-eye.left {
+  left: 11px;
+}
+
+.character-eye.right {
+  right: 11px;
+}
+
+.character-foot {
+  position: absolute;
+  bottom: -6px;
+  width: 9px;
+  height: 5px;
+  border-radius: 999px;
+  background: #6f4de2;
+}
+
+.character-foot.left {
+  left: 7px;
+  animation: currentFootLeft 920ms ease-in-out infinite;
+}
+
+.character-foot.right {
+  right: 7px;
+  animation: currentFootRight 920ms ease-in-out infinite;
 }
 
 .map-legend {
@@ -1167,25 +1212,25 @@ h3 {
 }
 
 .legend-current {
-  width: 18px;
+  position: relative;
+  width: 20px;
   height: 18px;
   border: 2px solid #ffffff;
-  border-radius: 999px 999px 999px 6px;
+  border-radius: 999px;
   background: #8b6cff;
   box-shadow: 0 0 0 1px rgba(91, 65, 190, 0.22);
-  transform: rotate(-45deg);
 }
 
 .legend-current::before {
   content: "";
-  display: block;
+  position: absolute;
+  left: 5px;
+  top: 6px;
   width: 2px;
   height: 3px;
-  margin: 6px 0 0 5px;
   border-radius: 999px;
   background: #201b3f;
-  box-shadow: 5px 0 0 #201b3f;
-  transform: rotate(45deg);
+  box-shadow: 6px 0 0 #201b3f;
 }
 
 .legend-event {
@@ -1552,6 +1597,45 @@ h3 {
   }
   80% {
     transform: translateX(-1px) translateY(0) rotate(-48deg);
+  }
+}
+
+@keyframes currentCharacterWalk {
+  0%,
+  100% {
+    transform: translateX(0) translateY(0) rotate(0deg);
+  }
+  20% {
+    transform: translateX(-2px) translateY(-2px) rotate(-5deg);
+  }
+  40% {
+    transform: translateX(1px) translateY(0) rotate(3deg);
+  }
+  60% {
+    transform: translateX(2px) translateY(-2px) rotate(5deg);
+  }
+  80% {
+    transform: translateX(-1px) translateY(0) rotate(-3deg);
+  }
+}
+
+@keyframes currentFootLeft {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-4px);
+  }
+}
+
+@keyframes currentFootRight {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(4px);
   }
 }
 

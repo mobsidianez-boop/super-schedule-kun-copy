@@ -1307,10 +1307,10 @@
       : null;
     const marker = window.L.marker([current.lat, current.lon], {
       icon: window.L.divIcon({
-        className: "current-position-pin",
-        html: "<span></span>",
-        iconSize: [36, 42],
-        iconAnchor: [18, 40],
+        className: "current-position-character-icon",
+        html: '<span class="current-position-character"><i class="character-eye left"></i><i class="character-eye right"></i><i class="character-foot left"></i><i class="character-foot right"></i></span>',
+        iconSize: [42, 46],
+        iconAnchor: [21, 42],
       }),
     });
     currentMarker = window.L.layerGroup([accuracyCircle, circle, marker].filter(Boolean))
