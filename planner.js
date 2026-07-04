@@ -1248,21 +1248,28 @@
     }
     const circle = window.L.circleMarker([current.lat, current.lon], {
       radius: 10,
-      color: "#1769aa",
+      color: "#7c3aed",
       weight: 3,
-      fillColor: "#42a5f5",
-      fillOpacity: 0.85,
+      fillColor: "#ffd34d",
+      fillOpacity: 0.9,
     });
     const accuracyCircle = Number.isFinite(current.accuracy)
       ? window.L.circle([current.lat, current.lon], {
           radius: Math.min(Math.max(current.accuracy, 20), 1000),
-          color: "#1769aa",
+          color: "#7c3aed",
           weight: 1,
-          fillColor: "#42a5f5",
-          fillOpacity: 0.08,
+          fillColor: "#ffd34d",
+          fillOpacity: 0.13,
         })
       : null;
-    const marker = window.L.marker([current.lat, current.lon]);
+    const marker = window.L.marker([current.lat, current.lon], {
+      icon: window.L.divIcon({
+        className: "current-position-pin",
+        html: "<span></span>",
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      }),
+    });
     currentMarker = window.L.layerGroup([accuracyCircle, circle, marker].filter(Boolean))
       .addTo(plannerMap)
       .bindPopup("現在地");
@@ -1280,7 +1287,7 @@
 
     if (route && route.geometry) {
       const line = window.L.geoJSON(route.geometry, {
-        style: { color: "#2f7f83", weight: 5, opacity: 0.75 },
+        style: { color: "#7047eb", weight: 5, opacity: 0.75 },
       }).addTo(plannerMap);
       routeLines.push(line);
     }
