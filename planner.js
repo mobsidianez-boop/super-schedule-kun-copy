@@ -1,8 +1,23 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
+  const ACCESS_KEY = "superScheduleKunPlannerAccess";
+  const ACCESS_CODE = "NoCodeTest";
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
+  const CONFIG = window.SUPER_SCHEDULE_CONFIG || {};
+  const plannerSupabase = window.supabase && CONFIG.supabaseUrl && CONFIG.supabaseAnonKey
+    ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
+    : null;
 
+  const plannerGate = document.querySelector("#planner-gate");
+  const plannerApp = document.querySelector("#planner-app");
+  const plannerAuthForm = document.querySelector("#planner-auth-form");
+  const plannerAuthEmail = document.querySelector("#planner-auth-email");
+  const plannerAuthPassword = document.querySelector("#planner-auth-password");
+  const plannerSignupButton = document.querySelector("#planner-signup-button");
+  const plannerAccessCode = document.querySelector("#planner-access-code");
+  const plannerCodeButton = document.querySelector("#planner-code-button");
+  const plannerAuthStatus = document.querySelector("#planner-auth-status");
   const form = document.querySelector("#event-form");
   const titleInput = document.querySelector("#event-title");
   const dateInput = document.querySelector("#event-date");
@@ -38,8 +53,10 @@
 
   let events = loadEvents();
   let detectedCandidate = null;
+  let plannerUnlocked = false;
   const notificationTimers = new Map();
   let plannerMap = null;
+  let overviewMarker = null;
   let currentMarker = null;
   let eventMarkers = [];
   let routeLines = [];
@@ -49,11 +66,13 @@
   viewDateInput.value = today;
   startInput.value = "10:00";
   endInput.value = "11:00";
-  render();
-  scheduleUpcomingNotifications();
+  initPlannerAccess();
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (!ensurePlannerAccess()) {
+      return;
+    }
     const permissionPromise = prepareNotificationPermission();
     const nextEvent = await readFormEvent();
     if (!nextEvent) {
@@ -71,6 +90,9 @@
   });
 
   clearButton.addEventListener("click", () => {
+    if (!ensurePlannerAccess()) {
+      return;
+    }
     if (!events.length) {
       return;
     }
@@ -85,6 +107,9 @@
   });
 
   viewDateInput.addEventListener("change", () => {
+    if (!plannerUnlocked) {
+      return;
+    }
     render();
     renderRouteList([]);
     setRouteStatus("現在地と予定場所を地図で確認できます。");
@@ -92,18 +117,35 @@
 
   detectForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (!ensurePlannerAccess()) {
+      return;
+    }
     await makeCandidateFromText();
   });
 
   if (ocrImageInput) {
-    ocrImageInput.addEventListener("change", handleImageSelection);
+    ocrImageInput.addEventListener("change", (event) => {
+      if (!ensurePlannerAccess()) {
+        event.target.value = "";
+        return;
+      }
+      handleImageSelection();
+    });
   }
 
   if (locateRoutesButton) {
-    locateRoutesButton.addEventListener("click", handleRouteLookup);
+    locateRoutesButton.addEventListener("click", () => {
+      if (!ensurePlannerAccess()) {
+        return;
+      }
+      handleRouteLookup();
+    });
   }
 
   candidateAddButton.addEventListener("click", () => {
+    if (!ensurePlannerAccess()) {
+      return;
+    }
     if (!detectedCandidate) {
       return;
     }
@@ -118,6 +160,160 @@
     candidateBox.hidden = true;
     render();
   });
+
+  if (plannerAuthForm) {
+    plannerAuthForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await loginPlanner();
+    });
+  }
+
+  if (plannerSignupButton) {
+    plannerSignupButton.addEventListener("click", signupPlanner);
+  }
+
+  if (plannerCodeButton) {
+    plannerCodeButton.addEventListener("click", unlockWithCode);
+  }
+
+  async function initPlannerAccess() {
+    lockPlanner();
+
+    if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
+      unlockPlanner("合言葉で開いています。");
+      return;
+    }
+
+    if (!plannerSupabase) {
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。合言葉 NoCodeTest で開けます。", "warning");
+      return;
+    }
+
+    plannerSupabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        unlockPlanner("ログイン中です。予定アプリを使えます。");
+      } else if (localStorage.getItem(ACCESS_KEY) !== ACCESS_CODE) {
+        lockPlanner();
+      }
+    });
+
+    const { data } = await plannerSupabase.auth.getSession();
+    if (data.session) {
+      unlockPlanner("ログイン中です。予定アプリを使えます。");
+    }
+  }
+
+  async function loginPlanner() {
+    if (!plannerSupabase) {
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。合言葉 NoCodeTest で開けます。", "error");
+      return;
+    }
+
+    const email = plannerAuthEmail.value.trim();
+    const password = plannerAuthPassword.value;
+    if (!email || !password) {
+      setPlannerAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+      return;
+    }
+
+    setPlannerAuthStatus("ログインしています。");
+    const { data, error } = await plannerSupabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setPlannerAuthStatus(`ログインできませんでした: ${getErrorText(error)}`, "error");
+      return;
+    }
+    if (data.session) {
+      unlockPlanner("ログイン中です。予定アプリを使えます。");
+    }
+  }
+
+  async function signupPlanner() {
+    if (!plannerSupabase) {
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。合言葉 NoCodeTest で開けます。", "error");
+      return;
+    }
+
+    const email = plannerAuthEmail.value.trim();
+    const password = plannerAuthPassword.value;
+    if (!email || !password) {
+      setPlannerAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+      return;
+    }
+
+    setPlannerAuthStatus("登録しています。");
+    const { data, error } = await plannerSupabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
+      },
+    });
+
+    if (error) {
+      setPlannerAuthStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
+      return;
+    }
+
+    if (data.session) {
+      unlockPlanner("登録してログインしました。予定アプリを使えます。");
+      return;
+    }
+
+    setPlannerAuthStatus("登録しました。確認メールが必要な設定の場合は、メール内のリンクを開いてからログインしてください。", "success");
+  }
+
+  function unlockWithCode() {
+    if (plannerAccessCode.value.trim() !== ACCESS_CODE) {
+      setPlannerAuthStatus("合言葉が違います。", "error");
+      return;
+    }
+    localStorage.setItem(ACCESS_KEY, ACCESS_CODE);
+    unlockPlanner("合言葉で開いています。");
+  }
+
+  function lockPlanner() {
+    plannerUnlocked = false;
+    if (plannerGate) {
+      plannerGate.hidden = false;
+    }
+    if (plannerApp) {
+      plannerApp.hidden = true;
+    }
+    setPlannerAuthStatus("予定アプリはログイン後に使えます。合言葉 NoCodeTest でも開けます。", "warning");
+  }
+
+  function unlockPlanner(message) {
+    plannerUnlocked = true;
+    if (plannerGate) {
+      plannerGate.hidden = true;
+    }
+    if (plannerApp) {
+      plannerApp.hidden = false;
+    }
+    setPlannerAuthStatus(message, "success");
+    render();
+    initializeMapOverview();
+    scheduleUpcomingNotifications();
+  }
+
+  function ensurePlannerAccess() {
+    if (plannerUnlocked) {
+      return true;
+    }
+    setPlannerAuthStatus("先にログインするか、合言葉 NoCodeTest を入力してください。", "warning");
+    if (plannerGate) {
+      plannerGate.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    return false;
+  }
+
+  function setPlannerAuthStatus(message, tone = "muted") {
+    if (!plannerAuthStatus) {
+      return;
+    }
+    plannerAuthStatus.textContent = message;
+    plannerAuthStatus.dataset.tone = tone;
+  }
 
   async function readFormEvent() {
     const title = cleanText(titleInput.value, 48);
@@ -335,6 +531,27 @@
     }
   }
 
+  function initializeMapOverview() {
+    if (!mapContainer || !window.L || plannerMap) {
+      if (plannerMap) {
+        window.setTimeout(() => plannerMap.invalidateSize(), 80);
+      }
+      return;
+    }
+
+    const tokyo = { lat: 35.68124, lon: 139.76713 };
+    plannerMap = window.L.map(mapContainer).setView([tokyo.lat, tokyo.lon], 11);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(plannerMap);
+
+    overviewMarker = window.L.marker([tokyo.lat, tokyo.lon])
+      .addTo(plannerMap)
+      .bindPopup("地図を表示中。現在地ボタンであなたの現在地と予定場所を表示します。");
+    window.setTimeout(() => plannerMap.invalidateSize(), 120);
+  }
+
   async function handleRouteLookup() {
     const dayEvents = getSelectedDayEvents().filter((item) => item.location);
     if (!dayEvents.length) {
@@ -463,6 +680,10 @@
   }
 
   function clearMapLayers() {
+    if (overviewMarker) {
+      overviewMarker.remove();
+      overviewMarker = null;
+    }
     if (currentMarker) {
       currentMarker.remove();
       currentMarker = null;

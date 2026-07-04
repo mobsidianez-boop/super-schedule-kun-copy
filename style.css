@@ -690,6 +690,10 @@ h3 {
   padding: 22px;
 }
 
+.planner-gate {
+  margin-bottom: 18px;
+}
+
 .planner-panel-head,
 .planner-toolbar,
 .planner-summary {
@@ -727,7 +731,8 @@ h3 {
 
 .planner-form label,
 .detect-form label,
-.planner-toolbar label {
+.planner-toolbar label,
+.planner-code-row label {
   display: grid;
   gap: 8px;
   color: var(--ink);
@@ -738,7 +743,8 @@ h3 {
 .planner-form input,
 .detect-form textarea,
 .detect-form input[type="file"],
-.planner-toolbar input {
+.planner-toolbar input,
+.planner-code-row input {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -752,7 +758,8 @@ h3 {
 
 .planner-form input,
 .detect-form input[type="file"],
-.planner-toolbar input {
+.planner-toolbar input,
+.planner-code-row input {
   min-height: 50px;
   padding: 0 12px;
 }
@@ -769,7 +776,8 @@ h3 {
 .planner-form input:focus,
 .detect-form textarea:focus,
 .detect-form input[type="file"]:focus,
-.planner-toolbar input:focus {
+.planner-toolbar input:focus,
+.planner-code-row input:focus {
   border-color: var(--teal);
   box-shadow: 0 0 0 4px rgba(47, 127, 131, 0.12);
 }
@@ -782,6 +790,13 @@ h3 {
 
 .planner-form-grid.two {
   grid-template-columns: minmax(0, 1fr) 130px;
+}
+
+.planner-code-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
 }
 
 .icon-button {
@@ -1336,6 +1351,10 @@ footer {
   .planner-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .planner-code-row {
+    grid-template-columns: 1fr;
   }
 
   .timeline-row {

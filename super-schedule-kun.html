@@ -86,6 +86,36 @@
         <p class="board-intro">予定を登録し、メッセージ文や画像から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
       </div>
 
+      <div class="auth-panel planner-gate" id="planner-gate">
+        <div class="planner-panel-head">
+          <h3>予定アプリを使う</h3>
+          <span class="planner-hint">初回は新規登録、または合言葉を入力</span>
+        </div>
+        <form class="auth-form" id="planner-auth-form">
+          <label>
+            <span>メールアドレス</span>
+            <input id="planner-auth-email" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <label>
+            <span>パスワード</span>
+            <input id="planner-auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上">
+          </label>
+          <div class="auth-actions">
+            <button class="button primary" type="submit">ログイン</button>
+            <button class="button" type="button" id="planner-signup-button">新規登録</button>
+          </div>
+        </form>
+        <div class="planner-code-row">
+          <label>
+            <span>登録なしで使う合言葉</span>
+            <input id="planner-access-code" type="password" autocomplete="off" placeholder="合言葉">
+          </label>
+          <button class="button" type="button" id="planner-code-button">合言葉で開く</button>
+        </div>
+        <p class="auth-status" id="planner-auth-status">予定アプリはログイン後に使えます。合言葉 NoCodeTest でも開けます。</p>
+      </div>
+
+      <div id="planner-app" hidden>
       <div class="planner-layout">
         <div class="planner-panel">
           <div class="planner-panel-head">
@@ -176,6 +206,7 @@
           <h3>空き時間</h3>
           <ul id="free-time-list"></ul>
         </div>
+      </div>
       </div>
     </section>
 
@@ -328,6 +359,14 @@
   </footer>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    window.SUPER_SCHEDULE_CONFIG = {
+      supabaseUrl: "https://ealykpoepyqpuxtfqabf.supabase.co",
+      supabaseAnonKey: "sb_publishable_lo7QUF2qKnhf7GLBjyz1lw_eu0fhF5l",
+      authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/super-schedule-kun.html"
+    };
+  </script>
   <script src="planner.js"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
