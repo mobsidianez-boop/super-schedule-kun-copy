@@ -965,6 +965,24 @@ h3 {
   background: var(--sky);
 }
 
+.timeline-delete {
+  justify-self: start;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.timeline-delete:hover {
+  color: #9f2f2f;
+  border-color: rgba(159, 47, 47, 0.24);
+}
+
 .timeline-item strong {
   display: block;
   font-size: 19px;

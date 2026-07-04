@@ -83,6 +83,7 @@
     events = [nextEvent, ...events];
     saveEvents();
     scheduleEventNotification(nextEvent, permissionPromise);
+    enrichEventPlaceInBackground(nextEvent);
     viewDateInput.value = nextEvent.date;
     form.reset();
     dateInput.value = nextEvent.date;
@@ -156,6 +157,7 @@
     events = [nextEvent, ...events];
     saveEvents();
     scheduleEventNotification(nextEvent, permissionPromise);
+    enrichEventPlaceInBackground(nextEvent);
     viewDateInput.value = detectedCandidate.date;
     detectText.value = "";
     detectedCandidate = null;
@@ -350,8 +352,7 @@
     if (location) {
       const confirmed = window.confirm(`「${location}」はこの予定の場所ですか？`);
       if (confirmed) {
-        showSummary("場所の座標と混雑目安を調べています。");
-        event.place = await fetchPlaceIntel(location, event);
+        event.placePending = true;
       }
     }
 
@@ -489,14 +490,35 @@
     if (detectedCandidate && detectedCandidate.location) {
       const confirmed = window.confirm(`「${detectedCandidate.location}」はこの予定の場所ですか？`);
       if (confirmed) {
-        setCandidatePlaceStatus("場所の座標と混雑目安を調べています。");
-        detectedCandidate.place = await fetchPlaceIntel(detectedCandidate.location, detectedCandidate);
+        detectedCandidate.placePending = true;
+        showCandidate(detectedCandidate);
+        enrichCandidatePlaceInBackground(detectedCandidate);
+        return;
       } else {
         detectedCandidate.location = "";
         detectedCandidate.travelMinutes = 0;
       }
     }
     showCandidate(detectedCandidate);
+  }
+
+  async function enrichCandidatePlaceInBackground(candidate) {
+    if (!candidate || !candidate.location) {
+      return;
+    }
+    setCandidatePlaceStatus("場所の座標と混雑目安を調べています。");
+    try {
+      const place = await fetchPlaceIntel(candidate.location, candidate);
+      if (detectedCandidate === candidate) {
+        detectedCandidate = { ...candidate, place, placePending: false };
+        showCandidate(detectedCandidate);
+      }
+    } catch {
+      if (detectedCandidate === candidate) {
+        detectedCandidate = { ...candidate, placePending: false };
+        showCandidate(detectedCandidate);
+      }
+    }
   }
 
   function showImagePreview(file) {
@@ -583,6 +605,33 @@
       };
     } catch {
       return fallback;
+    }
+  }
+
+  async function enrichEventPlaceInBackground(event) {
+    if (!event || !event.location || event.place || !event.placePending) {
+      return;
+    }
+
+    showSummary("予定を追加しました。場所の座標と混雑目安を調べています。");
+    try {
+      const place = await fetchPlaceIntel(event.location, event);
+      events = events.map((item) => item.id === event.id
+        ? { ...item, place, placePending: false }
+        : item);
+      saveEvents();
+      render();
+      const updated = events.find((item) => item.id === event.id);
+      if (updated) {
+        scheduleEventNotification(updated);
+      }
+    } catch {
+      events = events.map((item) => item.id === event.id
+        ? { ...item, placePending: false }
+        : item);
+      saveEvents();
+      render();
+      showSummary("予定を追加しました。場所情報はあとで再取得できます。");
     }
   }
 
@@ -1137,6 +1186,7 @@
         item.title,
         makeEventMeta(item),
         false,
+        item.id,
       ));
     });
   }
@@ -1148,6 +1198,9 @@
     }
     if (item.place && item.place.crowd) {
       parts.push(`混雑目安: ${item.place.crowd.level}`);
+    }
+    if (item.placePending) {
+      parts.push("場所情報を取得中");
     }
     return parts.join(" / ");
   }
@@ -1195,7 +1248,7 @@
     });
   }
 
-  function createTimelineRow(time, title, meta, isTravel) {
+  function createTimelineRow(time, title, meta, isTravel, eventId = "") {
     const row = document.createElement("div");
     row.className = "timeline-row";
 
@@ -1212,8 +1265,36 @@
     span.textContent = meta;
 
     item.append(strong, span);
+    if (!isTravel && eventId) {
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "timeline-delete";
+      deleteButton.type = "button";
+      deleteButton.textContent = "削除";
+      deleteButton.addEventListener("click", () => deleteEvent(eventId));
+      item.append(deleteButton);
+    }
     row.append(timeNode, item);
     return row;
+  }
+
+  function deleteEvent(eventId) {
+    const target = events.find((item) => item.id === eventId);
+    if (!target) {
+      return;
+    }
+    const ok = window.confirm(`「${target.title}」を削除しますか？`);
+    if (!ok) {
+      return;
+    }
+    if (notificationTimers.has(eventId)) {
+      window.clearTimeout(notificationTimers.get(eventId));
+      notificationTimers.delete(eventId);
+    }
+    events = events.filter((item) => item.id !== eventId);
+    saveEvents();
+    render();
+    renderRouteList([]);
+    setRouteStatus("予定を削除しました。必要なら現在地から移動時間を調べ直してください。");
   }
 
   function createEmptyState(text) {
