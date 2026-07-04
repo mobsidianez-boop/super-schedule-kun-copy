@@ -54,6 +54,7 @@
   let events = loadEvents();
   let detectedCandidate = null;
   let plannerUnlocked = false;
+  let lastDetectMessage = "";
   const notificationTimers = new Map();
   let plannerMap = null;
   let overviewMarker = null;
@@ -366,33 +367,36 @@
   function detectSchedule(rawText) {
     const text = cleanText(normalizeScheduleText(rawText), 280);
     if (!text) {
-      showSummary("候補にしたい文章を入力してください。");
+      setDetectMessage("候補にしたい文章を入力してください。");
       return null;
     }
 
     const scheduleText = pickScheduleText(text);
     if (!scheduleText) {
-      showSummary("予定に関する日時や用事が見つかりませんでした。予定が書かれた部分だけを貼り付けてください。");
+      setDetectMessage("予定に関する日時や用事が見つかりませんでした。予定が書かれた部分だけを貼り付けてください。");
       return null;
     }
 
     const base = new Date();
-    const date = detectDate(scheduleText, base);
-    const start = detectTime(scheduleText);
-    if (!date || !start) {
-      showSummary("予定の候補には日付と時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
+    const detectedDate = detectDate(scheduleText, base);
+    const detectedStart = detectTime(scheduleText);
+    if (!detectedDate && !detectedStart) {
+      setDetectMessage("予定の候補には日付か時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
       return null;
     }
 
+    const date = detectedDate || toDateInputValue(base);
+    const start = detectedStart || "10:00";
     const startMinutes = timeToMinutes(start);
     const end = minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
     const location = detectLocation(scheduleText);
     const title = detectTitle(scheduleText, location);
     if (!title || title === location) {
-      showSummary("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
+      setDetectMessage("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
       return null;
     }
 
+    lastDetectMessage = "";
     return {
       title,
       date,
@@ -400,6 +404,8 @@
       end,
       location,
       travelMinutes: location ? 30 : 0,
+      inferredDate: !detectedDate,
+      inferredTime: !detectedStart,
     };
   }
 
@@ -412,7 +418,7 @@
 
     const scored = candidates
       .map((line) => ({ line, score: scoreScheduleLine(line) }))
-      .filter((item) => item.score >= 4)
+      .filter((item) => item.score >= 3)
       .sort((a, b) => b.score - a.score);
 
     return scored[0] ? scored[0].line : "";
@@ -424,6 +430,7 @@
     if (hasTimeSignal(line)) score += 2;
     if (hasEventWord(line)) score += 2;
     if (detectLocation(line)) score += 1;
+    if (line.length >= 6 && (hasDateSignal(line) || hasTimeSignal(line))) score += 1;
     if (/よろしく|ありがとう|お疲れ|確認|返信|添付|画像|スクショ/.test(line)) score -= 1;
     return score;
   }
@@ -1118,22 +1125,33 @@
 
   function showCandidate(candidate) {
     if (!candidate) {
-      candidateBox.hidden = true;
+      candidateTitle.textContent = "候補を作れませんでした";
+      candidateMeta.textContent = lastDetectMessage || "予定の日時や用事名が分かる文章で試してください。";
+      candidateAddButton.hidden = true;
+      candidateBox.hidden = false;
       if (candidatePlace) {
         candidatePlace.hidden = true;
         candidatePlace.replaceChildren();
       }
       return;
     }
+    candidateAddButton.hidden = false;
     candidateTitle.textContent = candidate.title;
     candidateMeta.textContent = [
       formatDate(candidate.date),
       `${candidate.start}-${candidate.end}`,
       candidate.location ? `場所: ${candidate.location}` : "場所未設定",
       candidate.travelMinutes ? `移動${candidate.travelMinutes}分` : "移動なし",
-    ].join(" / ");
+      candidate.inferredDate ? "日付は今日で仮設定" : "",
+      candidate.inferredTime ? "時刻は10:00で仮設定" : "",
+    ].filter(Boolean).join(" / ");
     renderPlaceIntel(candidate.place);
     candidateBox.hidden = false;
+  }
+
+  function setDetectMessage(message) {
+    lastDetectMessage = message;
+    showSummary(message);
   }
 
   function setCandidatePlaceStatus(text) {
