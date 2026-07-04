@@ -356,19 +356,34 @@
   }
 
   function detectSchedule(rawText) {
-    const text = cleanText(rawText, 240);
+    const text = cleanText(rawText, 280);
     if (!text) {
       showSummary("候補にしたい文章を入力してください。");
       return null;
     }
 
+    const scheduleText = pickScheduleText(text);
+    if (!scheduleText) {
+      showSummary("予定に関する日時や用事が見つかりませんでした。予定が書かれた部分だけを貼り付けてください。");
+      return null;
+    }
+
     const base = new Date();
-    const date = detectDate(text, base);
-    const start = detectTime(text) || "10:00";
+    const date = detectDate(scheduleText, base);
+    const start = detectTime(scheduleText);
+    if (!date || !start) {
+      showSummary("予定の候補には日付と時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
+      return null;
+    }
+
     const startMinutes = timeToMinutes(start);
     const end = minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
-    const location = detectLocation(text);
-    const title = detectTitle(text, location);
+    const location = detectLocation(scheduleText);
+    const title = detectTitle(scheduleText, location);
+    if (!title || title === location) {
+      showSummary("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
+      return null;
+    }
 
     return {
       title,
@@ -378,6 +393,43 @@
       location,
       travelMinutes: location ? 30 : 0,
     };
+  }
+
+  function pickScheduleText(text) {
+    const lines = text
+      .split(/[\n。！？!?]/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const candidates = lines.length ? lines : [text];
+
+    const scored = candidates
+      .map((line) => ({ line, score: scoreScheduleLine(line) }))
+      .filter((item) => item.score >= 4)
+      .sort((a, b) => b.score - a.score);
+
+    return scored[0] ? scored[0].line : "";
+  }
+
+  function scoreScheduleLine(line) {
+    let score = 0;
+    if (hasDateSignal(line)) score += 2;
+    if (hasTimeSignal(line)) score += 2;
+    if (hasEventWord(line)) score += 2;
+    if (detectLocation(line)) score += 1;
+    if (/よろしく|ありがとう|お疲れ|確認|返信|添付|画像|スクショ/.test(line)) score -= 1;
+    return score;
+  }
+
+  function hasDateSignal(text) {
+    return /(20\d{2}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2}|\d{1,2}月\d{1,2}日|今日|きょう|明日|あした|明後日|あさって|月曜|火曜|水曜|木曜|金曜|土曜|日曜)/.test(text);
+  }
+
+  function hasTimeSignal(text) {
+    return /([01]?\d|2[0-3]):[0-5]\d|([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/.test(text);
+  }
+
+  function hasEventWord(text) {
+    return /(会議|打ち合わせ|ミーティング|面談|面接|予約|集合|待ち合わせ|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/.test(text);
   }
 
   async function handleImageSelection() {
@@ -554,12 +606,6 @@
 
   async function handleRouteLookup() {
     const dayEvents = getSelectedDayEvents().filter((item) => item.location);
-    if (!dayEvents.length) {
-      setRouteStatus("表示日の予定に場所がありません。");
-      renderRouteList([]);
-      return;
-    }
-
     if (!navigator.geolocation) {
       setRouteStatus("このブラウザは現在地取得に対応していません。");
       return;
@@ -579,6 +625,13 @@
       initMap(current);
       clearMapLayers();
       drawCurrentPosition(current);
+
+      if (!dayEvents.length) {
+        renderRouteList([]);
+        plannerMap.setView([current.lat, current.lon], 15);
+        setRouteStatus("現在地を地図に表示しました。表示日の予定に場所がないため、移動時間は未表示です。");
+        return;
+      }
 
       for (const event of dayEvents) {
         if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
@@ -695,9 +748,18 @@
   }
 
   function drawCurrentPosition(current) {
-    currentMarker = window.L.marker([current.lat, current.lon])
+    const circle = window.L.circleMarker([current.lat, current.lon], {
+      radius: 10,
+      color: "#1769aa",
+      weight: 3,
+      fillColor: "#42a5f5",
+      fillOpacity: 0.85,
+    });
+    const marker = window.L.marker([current.lat, current.lon]);
+    currentMarker = window.L.layerGroup([circle, marker])
       .addTo(plannerMap)
       .bindPopup("現在地");
+    currentMarker.openPopup();
   }
 
   function drawEventRoute(event, route) {
@@ -828,13 +890,21 @@
       return toDateInputValue(new Date(year, month - 1, day));
     }
 
+    const japaneseDate = text.match(/(\d{1,2})月(\d{1,2})日/);
+    if (japaneseDate) {
+      return toDateInputValue(new Date(base.getFullYear(), Number(japaneseDate[1]) - 1, Number(japaneseDate[2])));
+    }
+
     if (text.includes("明後日") || text.includes("あさって")) {
       return addDays(base, 2);
     }
     if (text.includes("明日") || text.includes("あした")) {
       return addDays(base, 1);
     }
-    return toDateInputValue(base);
+    if (text.includes("今日") || text.includes("きょう")) {
+      return toDateInputValue(base);
+    }
+    return "";
   }
 
   function detectTime(text) {
@@ -852,22 +922,54 @@
   }
 
   function detectLocation(text) {
-    const atPlace = text.match(/([^\s、。]{2,24})(?:で|にて)/);
-    return cleanText(atPlace ? atPlace[1] : "", 48);
+    const normalized = stripDateTime(text);
+    const explicit = normalized.match(/(?:場所|会場|集合場所|行き先)[:：]?\s*([^\s、。]{2,32})/);
+    if (explicit) {
+      return cleanLocation(explicit[1]);
+    }
+
+    const atPlace = normalized.match(/([^\s、。でに]{2,32})(?:で|にて)/);
+    if (atPlace) {
+      return cleanLocation(atPlace[1]);
+    }
+
+    const suffixPlace = normalized.match(/([^\s、。]{1,24}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
+    return cleanLocation(suffixPlace ? suffixPlace[1] : "");
   }
 
   function detectTitle(text, location) {
-    const withoutDate = text
-      .replace(/20\d{2}[/-]\d{1,2}[/-]\d{1,2}/g, "")
-      .replace(/\d{1,2}[/-]\d{1,2}/g, "")
-      .replace(/([01]?\d|2[0-3]):[0-5]\d/g, "")
-      .replace(/([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g, "")
-      .replace(/明後日|あさって|明日|あした|今日|きょう/g, "")
+    const withoutDate = stripDateTime(text)
+      .replace(/月曜|火曜|水曜|木曜|金曜|土曜|日曜|[月火水木金土日]曜日/g, "")
       .replace(location, "")
-      .replace(/で|にて/g, "")
+      .replace(/場所[:：]?|会場[:：]?|集合場所[:：]?|行き先[:：]?/g, "")
+      .replace(/で|にて|集合|予定|予約/g, " ")
+      .replace(/よろしく|お願いします|です|ます/g, " ")
+      .replace(/[、。]/g, " ")
+      .replace(/\s+/g, " ")
       .trim();
 
-    return cleanText(withoutDate || text, 48);
+    const eventWord = withoutDate.match(/(会議|打ち合わせ|ミーティング|面談|面接|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/);
+    return cleanText(eventWord ? eventWord[1] : withoutDate, 48);
+  }
+
+  function stripDateTime(text) {
+    return String(text || "")
+      .replace(/20\d{2}[/-]\d{1,2}[/-]\d{1,2}/g, " ")
+      .replace(/\d{1,2}[/-]\d{1,2}/g, " ")
+      .replace(/\d{1,2}月\d{1,2}日/g, " ")
+      .replace(/([01]?\d|2[0-3]):[0-5]\d/g, " ")
+      .replace(/([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g, " ")
+      .replace(/明後日|あさって|明日|あした|今日|きょう/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function cleanLocation(value) {
+    return cleanText(value, 48)
+      .replace(/^(場所|会場|集合場所|行き先)[:：]?/, "")
+      .replace(/^(は|が|を|に)/, "")
+      .replace(/(で|にて|集合|予定|予約).*$/, "")
+      .trim();
   }
 
   function showCandidate(candidate) {
