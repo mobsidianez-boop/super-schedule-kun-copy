@@ -169,7 +169,7 @@
       <div class="section-head">
         <p class="eyebrow">BOARD</p>
         <h2 id="bulletin-title">ひとこと掲示板</h2>
-        <p class="board-intro">ログインしてから名前とメッセージを送ると、みんなの投稿がこのページの下に新しい順で表示されます。</p>
+        <p class="board-intro">名前とメッセージを送ると、みんなの投稿がこのページの下に新しい順で表示されます。ログインすると投稿にユーザーIDも保存できます。</p>
       </div>
 
       <div class="auth-panel">
@@ -195,7 +195,7 @@
           </div>
           <button class="button" type="button" id="logout-button">ログアウト</button>
         </div>
-        <p class="auth-status" id="auth-status">投稿するにはログインしてください。</p>
+        <p class="auth-status" id="auth-status">ログインなしでも投稿できます。ログインすると投稿にユーザーIDが付きます。</p>
       </div>
 
       <form class="bulletin-form" id="bulletin-form">
@@ -268,16 +268,12 @@
         const isLoggedIn = Boolean(session);
         authForm.hidden = isLoggedIn;
         authSession.hidden = !isLoggedIn;
-        nameInput.disabled = !isLoggedIn;
-        messageInput.disabled = !isLoggedIn;
-        submitButton.disabled = !isLoggedIn;
-
         if (isLoggedIn) {
           authEmailDisplay.textContent = session.user.email || "ログイン済みユーザー";
           setAuthStatus("ログイン中です。投稿できます。", "success");
         } else {
           authEmailDisplay.textContent = "";
-          setAuthStatus("投稿するにはログインしてください。", "warning");
+          setAuthStatus("ログインなしでも投稿できます。ログインすると投稿にユーザーIDが付きます。", "warning");
         }
       };
 
@@ -354,11 +350,6 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!currentSession) {
-          setStatus("投稿するにはログインしてください。", "warning");
-          return;
-        }
-
         const name = nameInput.value.trim();
         const body = messageInput.value.trim();
 
@@ -376,14 +367,19 @@
         setStatus("送信しています。");
 
         try {
+          const messageRow = {
+            name,
+            body,
+            content: body
+          };
+
+          if (currentSession) {
+            messageRow.user_id = currentSession.user.id;
+          }
+
           const { error } = await supabase
             .from("messages")
-            .insert({
-              name,
-              body,
-              content: body,
-              user_id: currentSession.user.id
-            });
+            .insert(messageRow);
 
           if (error) {
             setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
@@ -397,7 +393,6 @@
           setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
         } finally {
           submitButton.disabled = false;
-          updateAuthView(currentSession);
         }
       });
 
