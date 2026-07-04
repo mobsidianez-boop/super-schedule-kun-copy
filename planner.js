@@ -84,8 +84,7 @@
   const today = toDateInputValue(new Date());
   dateInput.value = today;
   viewDateInput.value = today;
-  startInput.value = "10:00";
-  endInput.value = "11:00";
+  setDefaultEventDateTime();
   attachActionAnimations();
   initPlannerAccess();
 
@@ -99,9 +98,9 @@
     if (!nextEvent) {
       return;
     }
+    pruneExpiredEvents({ silent: true });
     events = [nextEvent, ...events];
     animatedEventId = nextEvent.id;
-    pruneExpiredEvents();
     saveEvents();
     if (events.some((item) => item.id === nextEvent.id)) {
       scheduleEventNotification(nextEvent, permissionPromise);
@@ -109,9 +108,7 @@
     }
     viewDateInput.value = nextEvent.date;
     form.reset();
-    dateInput.value = nextEvent.date;
-    startInput.value = "10:00";
-    endInput.value = "11:00";
+    setDefaultEventDateTime(nextEvent.date);
     render();
   });
 
@@ -681,6 +678,11 @@
 
     if (timeToMinutes(end) <= timeToMinutes(start)) {
       showSummary("終了時刻は開始時刻より後にしてください。");
+      return null;
+    }
+
+    if (isEventEnded({ date, start, end })) {
+      showSummary("終了済みの予定は自動削除対象になるため追加できません。これからの日時にしてもう一度追加してください。");
       return null;
     }
 
@@ -1303,7 +1305,10 @@
     }).addTo(plannerMap);
 
     setRouteStatus("現在地を取得しています。ブラウザの位置情報を許可してください。");
-    window.setTimeout(() => plannerMap.invalidateSize(), 120);
+    window.setTimeout(() => {
+      plannerMap.invalidateSize();
+      renderScheduleMap(events);
+    }, 120);
   }
 
   function startCurrentLocationTracking() {
@@ -2569,8 +2574,7 @@
     const before = events.length;
     const expired = [];
     events = events.filter((event) => {
-      const endAt = new Date(`${event.date}T${event.end || event.start || "23:59"}`);
-      if (Number.isNaN(endAt.getTime()) || endAt > now) {
+      if (!isEventEnded(event, now)) {
         return true;
       }
       expired.push(event);
@@ -2595,6 +2599,14 @@
       activeRouteEventId = "";
     }
     return expired.length;
+  }
+
+  function isEventEnded(event, now = new Date()) {
+    if (!event || !event.date) {
+      return false;
+    }
+    const endAt = new Date(`${event.date}T${event.end || event.start || "23:59"}`);
+    return !Number.isNaN(endAt.getTime()) && endAt <= now;
   }
 
   function createEmptyState(text) {
@@ -2845,6 +2857,23 @@
     const hour = Math.floor(minutes / 60);
     const minute = minutes % 60;
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  function setDefaultEventDateTime(preferredDate) {
+    const now = new Date();
+    let date = preferredDate || toDateInputValue(now);
+    let startMinutes = Math.ceil((now.getHours() * 60 + now.getMinutes() + 20) / 15) * 15;
+    if (preferredDate && preferredDate !== toDateInputValue(now)) {
+      startMinutes = 10 * 60;
+    } else if (startMinutes < 8 * 60) {
+      startMinutes = 10 * 60;
+    } else if (startMinutes + 60 > 23 * 60 + 59) {
+      date = addDays(now, 1);
+      startMinutes = 10 * 60;
+    }
+    dateInput.value = date;
+    startInput.value = minutesToTime(startMinutes);
+    endInput.value = minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
   }
 
   function toDateInputValue(date) {
