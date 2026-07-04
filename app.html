@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん アプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=user-events-1">
+  <link rel="stylesheet" href="style.css?v=planner-logout-1">
 </head>
 <body class="app-mode">
   <header class="header">
@@ -84,6 +84,7 @@
         <p class="eyebrow">APP</p>
         <h2 id="planner-title">予定ワークスペース</h2>
         <p class="board-intro">予定を登録し、メッセージ文や画像から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
+        <button class="button planner-logout-button" type="button" id="planner-logout-button" hidden>ログアウト</button>
       </div>
 
       <div class="auth-panel planner-gate" id="planner-gate">
@@ -384,7 +385,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=user-events-1"></script>
+  <script src="planner.js?v=planner-logout-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

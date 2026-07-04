@@ -18,6 +18,7 @@
   const plannerSignupButton = document.querySelector("#planner-signup-button");
   const plannerAccessCode = document.querySelector("#planner-access-code");
   const plannerCodeButton = document.querySelector("#planner-code-button");
+  const plannerLogoutButton = document.querySelector("#planner-logout-button");
   const plannerAuthStatus = document.querySelector("#planner-auth-status");
   const form = document.querySelector("#event-form");
   const titleInput = document.querySelector("#event-title");
@@ -211,6 +212,10 @@
     plannerCodeButton.addEventListener("click", unlockWithCode);
   }
 
+  if (plannerLogoutButton) {
+    plannerLogoutButton.addEventListener("click", logoutPlanner);
+  }
+
   function attachActionAnimations() {
     document.addEventListener("click", (event) => {
       const target = event.target.closest("button, .button, .timeline-delete, .schedule-event, .route-list li[role='button']");
@@ -357,6 +362,9 @@
       plannerApp.classList.remove("app-reveal");
       plannerApp.hidden = true;
     }
+    if (plannerLogoutButton) {
+      plannerLogoutButton.hidden = true;
+    }
     setPlannerAuthStatus("予定アプリはログイン後に使えます。", "warning");
   }
 
@@ -382,6 +390,9 @@
       plannerApp.hidden = false;
       animateElement(plannerApp, "app-reveal", 620);
     }
+    if (plannerLogoutButton) {
+      plannerLogoutButton.hidden = false;
+    }
     if (!plannerCloudWarningShown) {
       setPlannerAuthStatus(message, "success");
     }
@@ -391,6 +402,39 @@
     startCurrentLocationTracking();
     startExpirySweep();
     scheduleUpcomingNotifications();
+  }
+
+  async function logoutPlanner() {
+    if (cloudSyncTimer !== null) {
+      window.clearTimeout(cloudSyncTimer);
+      cloudSyncTimer = null;
+    }
+    if (plannerStorageMode === "user") {
+      await syncCloudEventsNow();
+    }
+    if (plannerSupabase) {
+      await plannerSupabase.auth.signOut();
+    }
+    localStorage.removeItem(ACCESS_KEY);
+    stopPlannerRuntime();
+    lockPlanner();
+    setPlannerAuthStatus("ログアウトしました。もう一度使うにはログインしてください。", "success");
+  }
+
+  function stopPlannerRuntime() {
+    clearNotificationTimers();
+    if (expirySweepId !== null) {
+      window.clearInterval(expirySweepId);
+      expirySweepId = null;
+    }
+    if (locationWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(locationWatchId);
+      locationWatchId = null;
+    }
+    clearMapLayers();
+    activeRouteEventId = "";
+    currentPosition = null;
+    renderRouteList([]);
   }
 
   function startExpirySweep() {
