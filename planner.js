@@ -485,8 +485,9 @@
     const startMinutes = timeToMinutes(start);
     const end = detectedRange.end || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
     const detectedLocation = detectLocation(scheduleText);
-    const title = detectTitle(scheduleText, detectedLocation);
+    let title = detectTitle(scheduleText, detectedLocation);
     const location = detectedLocation || inferLocationFromTitle(title);
+    title = normalizeDetectedTitle(title, location, scheduleText);
     if (!title || title === location) {
       setDetectMessage("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
       return null;
@@ -1741,6 +1742,38 @@
       return cleanText(`${location}に行く`, 48);
     }
     return cleanText(eventWord ? eventWord[1] : withoutDate, 48);
+  }
+
+  function normalizeDetectedTitle(title, location, sourceText = "") {
+    const cleanedTitle = cleanText(title, 48);
+    const cleanedLocation = cleanLocation(location);
+    if (!cleanedLocation) {
+      return cleanedTitle;
+    }
+
+    if (!cleanedTitle || isBareTravelTitle(cleanedTitle) || cleanedTitle === cleanedLocation) {
+      return cleanText(`${cleanedLocation}に行く`, 48);
+    }
+
+    const source = cleanText(normalizeScheduleText(sourceText), 120);
+    if (!cleanedTitle.includes(cleanedLocation) && source.includes(cleanedLocation) && isTravelSource(source, cleanedLocation)) {
+      return cleanText(`${cleanedLocation}に行く`, 48);
+    }
+
+    return cleanedTitle;
+  }
+
+  function isBareTravelTitle(title) {
+    return /^(?:に|へ)?(?:行く|いく|行き|向かう|訪問|寄る|到着|出発|行って|行こ)$/.test(cleanText(title, 48));
+  }
+
+  function isTravelSource(source, location) {
+    const escapedLocation = escapeRegExp(location);
+    return new RegExp(`${escapedLocation}\\s*(?:に|へ)\\s*(?:行く|いく|行き|向かう|訪問|寄る|到着|出発|行って|行こ)`).test(source);
+  }
+
+  function escapeRegExp(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function stripDateTime(text) {
