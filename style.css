@@ -668,6 +668,232 @@ h3 {
   margin-bottom: 28px;
 }
 
+.planner {
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.planner-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.planner-panel,
+.planner-board {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--soft-shadow);
+}
+
+.planner-panel {
+  padding: 22px;
+}
+
+.planner-panel-head,
+.planner-toolbar,
+.planner-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.planner-panel-head {
+  margin-bottom: 16px;
+}
+
+.planner-panel-head h3,
+.free-time-board h3 {
+  margin: 0;
+}
+
+.planner-hint,
+.planner-note {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.planner-note {
+  margin: 14px 0 0;
+}
+
+.planner-form,
+.detect-form {
+  display: grid;
+  gap: 14px;
+}
+
+.planner-form label,
+.detect-form label,
+.planner-toolbar label {
+  display: grid;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.planner-form input,
+.detect-form textarea,
+.planner-toolbar input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #ffffff;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  outline: none;
+}
+
+.planner-form input,
+.planner-toolbar input {
+  min-height: 50px;
+  padding: 0 12px;
+}
+
+.detect-form textarea {
+  padding: 12px;
+  resize: vertical;
+}
+
+.planner-form input:focus,
+.detect-form textarea:focus,
+.planner-toolbar input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 4px rgba(47, 127, 131, 0.12);
+}
+
+.planner-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.planner-form-grid.two {
+  grid-template-columns: minmax(0, 1fr) 130px;
+}
+
+.icon-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #ffffff;
+  font-weight: 900;
+}
+
+.candidate-box {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid rgba(47, 127, 131, 0.2);
+  border-radius: 8px;
+  background: var(--mint);
+}
+
+.candidate-box strong {
+  font-size: 20px;
+}
+
+.candidate-box span {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.planner-board {
+  margin-top: 18px;
+  overflow: hidden;
+}
+
+.planner-toolbar {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.planner-summary {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.timeline-board {
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.timeline-time {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.timeline-item {
+  padding: 14px 16px;
+  border-left: 5px solid var(--teal);
+  border-radius: 8px;
+  background: var(--sky);
+}
+
+.timeline-item strong {
+  display: block;
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+.timeline-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.timeline-item.travel {
+  border-color: var(--warm);
+  background: var(--warm-soft);
+}
+
+.empty-state {
+  padding: 18px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.free-time-board {
+  padding: 0 22px 22px;
+}
+
+.free-time-board ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.free-time-board li {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #ffffff;
+  font-weight: 900;
+}
+
 .bulletin {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(234, 248, 246, 0.52)),
@@ -946,6 +1172,7 @@ footer {
   .steps,
   .intro-strip,
   .scenarios,
+  .planner-layout,
   .auth-form,
   .bulletin-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -994,8 +1221,21 @@ footer {
   .intro-strip,
   .board,
   .scenarios,
+  .planner-layout,
+  .planner-form-grid,
+  .planner-form-grid.two,
   .auth-form,
   .bulletin-form {
+    grid-template-columns: 1fr;
+  }
+
+  .planner-panel-head,
+  .planner-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .timeline-row {
     grid-template-columns: 1fr;
   }
 

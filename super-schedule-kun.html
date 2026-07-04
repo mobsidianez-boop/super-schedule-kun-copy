@@ -14,6 +14,7 @@
     </a>
     <nav class="nav" aria-label="ページナビゲーション">
       <a class="active" href="super-schedule-kun.html">ホーム</a>
+      <a href="#planner">予定アプリ</a>
       <a href="features.html">機能</a>
       <a href="use-cases.html">活用シーン</a>
     </nav>
@@ -25,17 +26,17 @@
         <span class="tag">予定管理を、もっと軽く。</span>
         <h1>予定に追われる毎日を、余白のある一日に。</h1>
         <p class="lead">
-          スーパー・スケジュールくんは、メッセージや画像から予定を見つけて、
-          登録、空き時間、移動時間までまとめて整理するスケジュールアプリです。
+          スーパー・スケジュールくんは、メッセージ文や手入力から予定を整理して、
+          登録、空き時間、移動メモまでまとめて扱えるスケジュールアプリです。
         </p>
         <div class="hero-note">
           <span>文章</span>
-          <span>画像</span>
-          <span>SNSメッセージ</span>
+          <span>貼り付け文</span>
+          <span>SNS文面</span>
           <span>移動時間</span>
         </div>
         <div class="actions">
-          <a class="button primary" href="features.html">機能を見る</a>
+          <a class="button primary" href="#planner">予定を管理する</a>
           <a class="button" href="use-cases.html">使い方を見る</a>
         </div>
       </div>
@@ -66,13 +67,97 @@
             </div>
             <div class="event">
               <span class="time">17:45</span>
-              <span class="event-text move">移動: 電車28分 / 徒歩8分</span>
+              <span class="event-text move">移動メモ: 36分</span>
             </div>
           </div>
           <div class="route-card">
-            <div><span>次の移動</span><strong>36分</strong></div>
+            <div><span>移動メモ</span><strong>36分</strong></div>
             <div><span>出発目安</span><strong>17:44</strong></div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section planner" id="planner" aria-labelledby="planner-title">
+      <div class="section-head">
+        <p class="eyebrow">APP</p>
+        <h2 id="planner-title">予定ワークスペース</h2>
+        <p class="board-intro">予定を登録し、メッセージ文から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
+      </div>
+
+      <div class="planner-layout">
+        <div class="planner-panel">
+          <div class="planner-panel-head">
+            <h3>予定を登録</h3>
+            <button class="icon-button" type="button" id="clear-events-button" title="すべて削除">消去</button>
+          </div>
+          <form class="planner-form" id="event-form">
+            <label>
+              <span>予定名</span>
+              <input id="event-title" type="text" maxlength="48" placeholder="例: 渋谷で打ち合わせ" required>
+            </label>
+            <div class="planner-form-grid">
+              <label>
+                <span>日付</span>
+                <input id="event-date" type="date" required>
+              </label>
+              <label>
+                <span>開始</span>
+                <input id="event-start" type="time" required>
+              </label>
+              <label>
+                <span>終了</span>
+                <input id="event-end" type="time" required>
+              </label>
+            </div>
+            <div class="planner-form-grid two">
+              <label>
+                <span>場所</span>
+                <input id="event-location" type="text" maxlength="40" placeholder="例: 渋谷">
+              </label>
+              <label>
+                <span>移動時間</span>
+                <input id="event-travel" type="number" min="0" max="240" step="5" placeholder="分">
+              </label>
+            </div>
+            <button class="button primary" type="submit">予定に追加</button>
+          </form>
+        </div>
+
+        <div class="planner-panel">
+          <div class="planner-panel-head">
+            <h3>文章から候補を検出</h3>
+            <span class="planner-hint">例: 明日18:30 渋谷で打ち合わせ</span>
+          </div>
+          <form class="detect-form" id="detect-form">
+            <label>
+              <span>メッセージ本文</span>
+              <textarea id="detect-text" rows="5" maxlength="280" placeholder="予定が書かれた文章を貼り付けてください"></textarea>
+            </label>
+            <button class="button" type="submit">候補を作る</button>
+          </form>
+          <div class="candidate-box" id="candidate-box" hidden>
+            <p class="eyebrow">候補</p>
+            <strong id="candidate-title"></strong>
+            <span id="candidate-meta"></span>
+            <button class="button primary" type="button" id="candidate-add-button">この候補を登録</button>
+          </div>
+          <p class="planner-note">画像やSNS連携は外部APIが必要です。今は画像内の文字やSNS文面を貼り付けると候補化できます。</p>
+        </div>
+      </div>
+
+      <div class="planner-board">
+        <div class="planner-toolbar">
+          <label>
+            <span>表示日</span>
+            <input id="view-date" type="date">
+          </label>
+          <div class="planner-summary" id="planner-summary">予定を読み込んでいます。</div>
+        </div>
+        <div class="timeline-board" id="timeline-board" aria-live="polite"></div>
+        <div class="free-time-board">
+          <h3>空き時間</h3>
+          <ul id="free-time-list"></ul>
         </div>
       </div>
     </section>
@@ -139,7 +224,7 @@
         <article class="step">
           <span class="num">1</span>
           <h3>予定を検出</h3>
-          <p>文章や画像から日時、場所、内容を読み取ります。</p>
+          <p>文章から日時、場所、内容の候補を作ります。</p>
         </article>
         <article class="step">
           <span class="num">2</span>
@@ -154,7 +239,7 @@
         <article class="step">
           <span class="num">4</span>
           <h3>移動も整理</h3>
-          <p>移動時間や通知まで含めて一日を組み立てます。</p>
+          <p>移動時間メモまで含めて一日を組み立てます。</p>
         </article>
       </div>
     </section>
@@ -224,6 +309,7 @@
   <footer>
     スーパー・スケジュールくん | 予定管理を、もっと軽く。
   </footer>
+  <script src="planner.js"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
