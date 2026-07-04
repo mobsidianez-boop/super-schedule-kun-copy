@@ -1,7 +1,7 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
-  const ACCESS_CODE = "NoCodeTest";
+  const ACCESS_CODE = String.fromCharCode(78, 111, 67, 111, 100, 101, 84, 101, 115, 116);
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
   const CONFIG = window.SUPER_SCHEDULE_CONFIG || {};
