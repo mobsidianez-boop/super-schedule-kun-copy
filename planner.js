@@ -1,6 +1,7 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
+  const LOCAL_ACCOUNTS_KEY = "superScheduleKunLocalAccounts";
   const CLOUD_EVENTS_TABLE = "events";
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
@@ -274,12 +275,6 @@
   }
 
   async function loginPlanner() {
-    if (!plannerSupabase) {
-      setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "error");
-      animateGate("gate-shake");
-      return;
-    }
-
     const email = plannerAuthEmail.value.trim();
     const password = plannerAuthPassword.value;
     if (!email || !password) {
@@ -289,11 +284,28 @@
     }
 
     setPlannerAuthStatus("ログインしています。");
-    let { data, error } = await plannerSupabase.auth.signInWithPassword({ email, password });
-    if (isFetchFailure(error)) {
-      const fallback = await signInPlannerViaRest(email, password);
+    let data = null;
+    let error = null;
+    let localAuth = false;
+    if (plannerSupabase) {
+      try {
+        ({ data, error } = await plannerSupabase.auth.signInWithPassword({ email, password }));
+      } catch (caughtError) {
+        error = caughtError;
+      }
+      if (isFetchFailure(error)) {
+        const fallback = await signInPlannerViaRest(email, password);
+        data = fallback.data;
+        error = fallback.error;
+      }
+    } else {
+      error = new Error("Supabase client is unavailable");
+    }
+    if (isFetchFailure(error) || /supabase client is unavailable/i.test(getRawErrorText(error))) {
+      const fallback = await signInPlannerLocally(email, password);
       data = fallback.data;
       error = fallback.error;
+      localAuth = fallback.local;
     }
     if (error) {
       setPlannerAuthStatus(`ログインできませんでした: ${getErrorText(error)}`, "error");
@@ -301,17 +313,14 @@
       return;
     }
     if (data.session) {
-      unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
+      unlockPlanner(
+        localAuth ? "Supabaseに接続できないため、このブラウザ内のメールアカウントでログインしました。" : "ログイン中です。予定アプリを使えます。",
+        { mode: localAuth ? "local" : "user", session: data.session }
+      );
     }
   }
 
   async function signupPlanner() {
-    if (!plannerSupabase) {
-      setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "error");
-      animateGate("gate-shake");
-      return;
-    }
-
     const email = plannerAuthEmail.value.trim();
     const password = plannerAuthPassword.value;
     if (!email || !password) {
@@ -321,17 +330,34 @@
     }
 
     setPlannerAuthStatus("登録しています。");
-    let { data, error } = await plannerSupabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
-      },
-    });
-    if (isFetchFailure(error)) {
-      const fallback = await signupPlannerViaRest(email, password);
+    let data = null;
+    let error = null;
+    let localAuth = false;
+    if (plannerSupabase) {
+      try {
+        ({ data, error } = await plannerSupabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
+          },
+        }));
+      } catch (caughtError) {
+        error = caughtError;
+      }
+      if (isFetchFailure(error)) {
+        const fallback = await signupPlannerViaRest(email, password);
+        data = fallback.data;
+        error = fallback.error;
+      }
+    } else {
+      error = new Error("Supabase client is unavailable");
+    }
+    if (isFetchFailure(error) || /supabase client is unavailable/i.test(getRawErrorText(error))) {
+      const fallback = await signupPlannerLocally(email, password);
       data = fallback.data;
       error = fallback.error;
+      localAuth = fallback.local;
     }
 
     if (error) {
@@ -341,7 +367,10 @@
     }
 
     if (data.session) {
-      unlockPlanner("登録してログインしました。予定アプリを使えます。", { mode: "user", session: data.session });
+      unlockPlanner(
+        localAuth ? "Supabaseに接続できないため、このブラウザ内のメールアカウントで登録しました。" : "登録してログインしました。予定アプリを使えます。",
+        { mode: localAuth ? "local" : "user", session: data.session }
+      );
       return;
     }
 
@@ -411,6 +440,74 @@
     });
   }
 
+  async function signInPlannerLocally(email, password) {
+    const accounts = loadLocalAccounts();
+    const account = accounts[normalizeEmail(email)];
+    if (!account) {
+      return { data: null, error: new Error("Supabaseに接続できず、このブラウザ内にも登録がありません。先に新規登録してください。"), local: true };
+    }
+    const passwordHash = await hashLocalPassword(email, password, account.salt);
+    if (passwordHash !== account.passwordHash) {
+      return { data: null, error: new Error("パスワードが違います。"), local: true };
+    }
+    return { data: { session: makeLocalSession(email) }, error: null, local: true };
+  }
+
+  async function signupPlannerLocally(email, password) {
+    const accounts = loadLocalAccounts();
+    const key = normalizeEmail(email);
+    if (accounts[key]) {
+      return { data: null, error: new Error("このブラウザ内では登録済みです。ログインしてください。"), local: true };
+    }
+    const salt = createId();
+    accounts[key] = {
+      email: key,
+      salt,
+      passwordHash: await hashLocalPassword(email, password, salt),
+      createdAt: new Date().toISOString(),
+    };
+    localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(accounts));
+    return { data: { session: makeLocalSession(email) }, error: null, local: true };
+  }
+
+  function loadLocalAccounts() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LOCAL_ACCOUNTS_KEY) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  async function hashLocalPassword(email, password, salt) {
+    const value = `${normalizeEmail(email)}:${salt}:${password}`;
+    if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+      const bytes = new TextEncoder().encode(value);
+      const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+      return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+    return btoa(unescape(encodeURIComponent(value)));
+  }
+
+  function makeLocalSession(email) {
+    const normalized = normalizeEmail(email);
+    return {
+      access_token: "local-browser-session",
+      user: {
+        id: `local:${encodeLocalUserId(normalized)}`,
+        email: normalized,
+      },
+    };
+  }
+
+  function normalizeEmail(email) {
+    return String(email || "").trim().toLowerCase();
+  }
+
+  function encodeLocalUserId(value) {
+    return btoa(unescape(encodeURIComponent(value))).replace(/[+/=]/g, "");
+  }
+
   async function readAuthError(response) {
     try {
       const body = await response.json();
@@ -463,10 +560,10 @@
 
   async function unlockPlanner(message, options = {}) {
     plannerUnlocked = true;
-    plannerStorageMode = options.mode === "user" ? "user" : "test";
+    plannerStorageMode = options.mode === "user" || options.mode === "local" ? options.mode : "test";
     plannerUserId = options.session && options.session.user ? options.session.user.id : "";
     plannerCloudWarningShown = false;
-    if (plannerStorageMode === "user") {
+    if (plannerStorageMode === "user" || plannerStorageMode === "local") {
       await loadUserEvents(options.session);
     } else {
       events = loadEvents(getLocalEventsKey());
@@ -2514,7 +2611,7 @@
   }
 
   function getLocalEventsKey() {
-    if (plannerStorageMode === "user" && plannerUserId) {
+    if ((plannerStorageMode === "user" || plannerStorageMode === "local") && plannerUserId) {
       return `${STORAGE_KEY}:user:${plannerUserId}`;
     }
     if (plannerStorageMode === "test") {
@@ -2546,6 +2643,10 @@
     }
     plannerUserId = session.user.id;
     events = loadEvents(getLocalEventsKey());
+    if (plannerStorageMode === "local") {
+      showCloudStorageWarning("Supabaseに接続できないため、このブラウザ内に予定を保存しています。");
+      return;
+    }
     if (!plannerSupabase) {
       showCloudStorageWarning("クラウド保存を読み込めませんでした。この端末内の予定だけを表示しています。");
       return;
