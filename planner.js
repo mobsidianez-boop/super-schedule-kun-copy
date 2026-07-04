@@ -21,9 +21,14 @@
   const candidateBox = document.querySelector("#candidate-box");
   const candidateTitle = document.querySelector("#candidate-title");
   const candidateMeta = document.querySelector("#candidate-meta");
+  const candidatePlace = document.querySelector("#candidate-place");
   const candidateAddButton = document.querySelector("#candidate-add-button");
   const viewDateInput = document.querySelector("#view-date");
   const summary = document.querySelector("#planner-summary");
+  const locateRoutesButton = document.querySelector("#locate-routes-button");
+  const routeStatus = document.querySelector("#route-status");
+  const mapContainer = document.querySelector("#planner-map");
+  const routeList = document.querySelector("#route-list");
   const timelineBoard = document.querySelector("#timeline-board");
   const freeTimeList = document.querySelector("#free-time-list");
 
@@ -33,6 +38,11 @@
 
   let events = loadEvents();
   let detectedCandidate = null;
+  const notificationTimers = new Map();
+  let plannerMap = null;
+  let currentMarker = null;
+  let eventMarkers = [];
+  let routeLines = [];
 
   const today = toDateInputValue(new Date());
   dateInput.value = today;
@@ -40,15 +50,18 @@
   startInput.value = "10:00";
   endInput.value = "11:00";
   render();
+  scheduleUpcomingNotifications();
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const nextEvent = readFormEvent();
+    const permissionPromise = prepareNotificationPermission();
+    const nextEvent = await readFormEvent();
     if (!nextEvent) {
       return;
     }
     events = [nextEvent, ...events];
     saveEvents();
+    scheduleEventNotification(nextEvent, permissionPromise);
     viewDateInput.value = nextEvent.date;
     form.reset();
     dateInput.value = nextEvent.date;
@@ -67,26 +80,38 @@
     }
     events = [];
     saveEvents();
+    clearNotificationTimers();
     render();
   });
 
-  viewDateInput.addEventListener("change", render);
+  viewDateInput.addEventListener("change", () => {
+    render();
+    renderRouteList([]);
+    setRouteStatus("現在地と予定場所を地図で確認できます。");
+  });
 
-  detectForm.addEventListener("submit", (event) => {
+  detectForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    makeCandidateFromText();
+    await makeCandidateFromText();
   });
 
   if (ocrImageInput) {
     ocrImageInput.addEventListener("change", handleImageSelection);
   }
 
+  if (locateRoutesButton) {
+    locateRoutesButton.addEventListener("click", handleRouteLookup);
+  }
+
   candidateAddButton.addEventListener("click", () => {
     if (!detectedCandidate) {
       return;
     }
-    events = [{ ...detectedCandidate, id: createId(), createdAt: new Date().toISOString() }, ...events];
+    const permissionPromise = prepareNotificationPermission();
+    const nextEvent = { ...detectedCandidate, id: createId(), createdAt: new Date().toISOString() };
+    events = [nextEvent, ...events];
     saveEvents();
+    scheduleEventNotification(nextEvent, permissionPromise);
     viewDateInput.value = detectedCandidate.date;
     detectText.value = "";
     detectedCandidate = null;
@@ -94,7 +119,7 @@
     render();
   });
 
-  function readFormEvent() {
+  async function readFormEvent() {
     const title = cleanText(titleInput.value, 48);
     const date = dateInput.value;
     const start = startInput.value;
@@ -112,7 +137,7 @@
       return null;
     }
 
-    return {
+    const event = {
       id: createId(),
       title,
       date,
@@ -122,6 +147,16 @@
       travelMinutes,
       createdAt: new Date().toISOString(),
     };
+
+    if (location) {
+      const confirmed = window.confirm(`「${location}」はこの予定の場所ですか？`);
+      if (confirmed) {
+        showSummary("場所の座標と混雑目安を調べています。");
+        event.place = await fetchPlaceIntel(location, event);
+      }
+    }
+
+    return event;
   }
 
   function detectSchedule(rawText) {
@@ -192,14 +227,24 @@
 
       detectText.value = text;
       setOcrStatus("読み取りました。候補を作成しました。", 1);
-      makeCandidateFromText();
+      await makeCandidateFromText();
     } catch (error) {
       setOcrStatus(`読み取れませんでした: ${getErrorText(error)}`, 0);
     }
   }
 
-  function makeCandidateFromText() {
+  async function makeCandidateFromText() {
     detectedCandidate = detectSchedule(detectText.value);
+    if (detectedCandidate && detectedCandidate.location) {
+      const confirmed = window.confirm(`「${detectedCandidate.location}」はこの予定の場所ですか？`);
+      if (confirmed) {
+        setCandidatePlaceStatus("場所の座標と混雑目安を調べています。");
+        detectedCandidate.place = await fetchPlaceIntel(detectedCandidate.location, detectedCandidate);
+      } else {
+        detectedCandidate.location = "";
+        detectedCandidate.travelMinutes = 0;
+      }
+    }
     showCandidate(detectedCandidate);
   }
 
@@ -236,6 +281,316 @@
       return "原因不明のエラーです。";
     }
     return error.message || String(error);
+  }
+
+  async function fetchPlaceIntel(location, event) {
+    const fallback = {
+      query: location,
+      displayName: location,
+      crowd: estimateCrowd({ display_name: location, type: "" }, event),
+      source: "場所検索に失敗したため、地名と時刻だけから作った混雑目安です。",
+      fetchedAt: new Date().toISOString(),
+    };
+
+    try {
+      const params = new URLSearchParams({
+        format: "jsonv2",
+        q: location,
+        limit: "1",
+        addressdetails: "1",
+        extratags: "1",
+        "accept-language": "ja",
+      });
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+      if (!response.ok) {
+        return fallback;
+      }
+
+      const places = await response.json();
+      const place = Array.isArray(places) ? places[0] : null;
+      if (!place) {
+        return {
+          ...fallback,
+          source: "座標候補が見つからなかったため、地名と時刻だけから作った混雑目安です。",
+        };
+      }
+
+      const osmType = String(place.osm_type || "").toLowerCase();
+      const osmId = place.osm_id;
+      const mapUrl = osmType && osmId ? `https://www.openstreetmap.org/${osmType}/${osmId}` : "";
+
+      return {
+        query: location,
+        displayName: place.display_name || location,
+        lat: Number(place.lat),
+        lon: Number(place.lon),
+        category: [place.category, place.type].filter(Boolean).join(" / "),
+        mapUrl,
+        crowd: estimateCrowd(place, event),
+        source: "OpenStreetMapの場所情報と予定時刻から作った混雑目安です。リアルタイム人流ではありません。",
+        fetchedAt: new Date().toISOString(),
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function handleRouteLookup() {
+    const dayEvents = getSelectedDayEvents().filter((item) => item.location);
+    if (!dayEvents.length) {
+      setRouteStatus("表示日の予定に場所がありません。");
+      renderRouteList([]);
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setRouteStatus("このブラウザは現在地取得に対応していません。");
+      return;
+    }
+
+    if (!window.L) {
+      setRouteStatus("地図ライブラリを読み込めませんでした。通信状態を確認してください。");
+      return;
+    }
+
+    locateRoutesButton.disabled = true;
+    setRouteStatus("現在地を取得しています。");
+
+    try {
+      const current = await getCurrentPosition();
+      const routeResults = [];
+      initMap(current);
+      clearMapLayers();
+      drawCurrentPosition(current);
+
+      for (const event of dayEvents) {
+        if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
+          setRouteStatus(`${event.location} の座標を調べています。`);
+          event.place = await fetchPlaceIntel(event.location, event);
+        }
+
+        if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
+          routeResults.push({
+            event,
+            status: "座標を取得できませんでした。",
+          });
+          continue;
+        }
+
+        try {
+          setRouteStatus(`${event.location} への移動時間を調べています。`);
+          const route = await fetchRouteEstimate(current, event.place);
+          routeResults.push({ event, route });
+          drawEventRoute(event, route);
+        } catch (error) {
+          routeResults.push({
+            event,
+            status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
+          });
+          drawEventRoute(event, null);
+        }
+      }
+
+      saveEvents();
+      render();
+      renderRouteList(routeResults);
+      fitMapToContent(current, routeResults);
+      setRouteStatus("現在地から予定場所への移動時間を表示しています。渋滞情報はリアルタイム交通API未設定のため目安です。");
+    } catch (error) {
+      setRouteStatus(`移動時間を調べられませんでした: ${getErrorText(error)}`);
+    } finally {
+      locateRoutesButton.disabled = false;
+    }
+  }
+
+  function getSelectedDayEvents() {
+    const date = viewDateInput.value || today;
+    return events
+      .filter((item) => item.date === date)
+      .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        }),
+        (error) => reject(new Error(error.message || "現在地の取得が許可されませんでした。")),
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5 * 60 * 1000 },
+      );
+    });
+  }
+
+  async function fetchRouteEstimate(current, place) {
+    const params = new URLSearchParams({
+      overview: "full",
+      geometries: "geojson",
+      alternatives: "false",
+      steps: "false",
+    });
+    const coordinates = `${current.lon},${current.lat};${place.lon},${place.lat}`;
+    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error("ルートAPIが応答しませんでした。");
+    }
+    const data = await response.json();
+    const route = data.routes && data.routes[0];
+    if (!route) {
+      throw new Error("ルートが見つかりませんでした。");
+    }
+
+    return {
+      durationMinutes: Math.max(1, Math.round(route.duration / 60)),
+      distanceKm: Math.round((route.distance / 1000) * 10) / 10,
+      geometry: route.geometry,
+      trafficNote: "OSRMはリアルタイム渋滞情報に非対応です。渋滞確認には交通情報APIの追加が必要です。",
+    };
+  }
+
+  function initMap(current) {
+    if (!plannerMap) {
+      plannerMap = window.L.map(mapContainer).setView([current.lat, current.lon], 13);
+      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(plannerMap);
+    } else {
+      plannerMap.setView([current.lat, current.lon], 13);
+      window.setTimeout(() => plannerMap.invalidateSize(), 50);
+    }
+  }
+
+  function clearMapLayers() {
+    if (currentMarker) {
+      currentMarker.remove();
+      currentMarker = null;
+    }
+    eventMarkers.forEach((marker) => marker.remove());
+    routeLines.forEach((line) => line.remove());
+    eventMarkers = [];
+    routeLines = [];
+  }
+
+  function drawCurrentPosition(current) {
+    currentMarker = window.L.marker([current.lat, current.lon])
+      .addTo(plannerMap)
+      .bindPopup("現在地");
+  }
+
+  function drawEventRoute(event, route) {
+    const marker = window.L.marker([event.place.lat, event.place.lon])
+      .addTo(plannerMap)
+      .bindPopup(`${event.title}<br>${event.location}`);
+    eventMarkers.push(marker);
+
+    if (route && route.geometry) {
+      const line = window.L.geoJSON(route.geometry, {
+        style: { color: "#2f7f83", weight: 5, opacity: 0.75 },
+      }).addTo(plannerMap);
+      routeLines.push(line);
+    }
+  }
+
+  function fitMapToContent(current, routeResults) {
+    const points = [[current.lat, current.lon]];
+    routeResults.forEach(({ event }) => {
+      if (event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
+        points.push([event.place.lat, event.place.lon]);
+      }
+    });
+    if (points.length > 1) {
+      plannerMap.fitBounds(window.L.latLngBounds(points), { padding: [28, 28] });
+    }
+  }
+
+  function renderRouteList(results) {
+    if (!routeList) {
+      return;
+    }
+    routeList.replaceChildren();
+    if (!results.length) {
+      return;
+    }
+
+    results.forEach(({ event, route, status }) => {
+      const item = document.createElement("li");
+      const title = document.createElement("strong");
+      title.textContent = event.title;
+      item.append(title);
+
+      if (route) {
+        item.append(createTextSpan(`${event.location}: 約${route.durationMinutes}分 / ${route.distanceKm}km`));
+        if (event.place && event.place.crowd) {
+          item.append(createTextSpan(`混雑目安: ${event.place.crowd.level}（${event.place.crowd.reason}）`));
+        }
+        item.append(createTextSpan(`渋滞情報: ${route.trafficNote}`));
+      } else {
+        item.append(createTextSpan(`${event.location}: ${status || "移動時間を取得できませんでした。"}`));
+      }
+
+      routeList.append(item);
+    });
+  }
+
+  function createTextSpan(text) {
+    const span = document.createElement("span");
+    span.textContent = text;
+    return span;
+  }
+
+  function setRouteStatus(text) {
+    if (routeStatus) {
+      routeStatus.textContent = text;
+    } else {
+      showSummary(text);
+    }
+  }
+
+  function estimateCrowd(place, event) {
+    const eventDate = new Date(`${event.date}T${event.start || "10:00"}`);
+    const hour = eventDate.getHours();
+    const day = eventDate.getDay();
+    const weekend = day === 0 || day === 6;
+    const placeText = `${place.display_name || ""} ${place.category || ""} ${place.type || ""}`.toLowerCase();
+    let score = 1;
+    const reasons = [];
+
+    if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)) {
+      score += 2;
+      reasons.push("通勤・帰宅時間帯");
+    } else if (hour >= 11 && hour <= 14) {
+      score += 1;
+      reasons.push("昼の時間帯");
+    } else if (hour >= 18 && hour <= 21) {
+      score += 1;
+      reasons.push("夜の外出時間帯");
+    }
+
+    if (weekend) {
+      score += 1;
+      reasons.push("週末");
+    }
+
+    if (/station|railway|subway|train|駅/.test(placeText)) {
+      score += 2;
+      reasons.push("駅・交通拠点");
+    } else if (/mall|shop|restaurant|cafe|bar|food|commercial|百貨店|商業|カフェ|レストラン/.test(placeText)) {
+      score += 1;
+      reasons.push("商業施設・飲食店");
+    } else if (/park|school|university|office|building|公園|学校|大学|ビル/.test(placeText)) {
+      score += 1;
+      reasons.push("利用者が集まりやすい場所");
+    }
+
+    if (score >= 5) {
+      return { level: "高め", reason: reasons.join("、") || "時間帯と場所の傾向" };
+    }
+    if (score >= 3) {
+      return { level: "ふつう", reason: reasons.join("、") || "時間帯と場所の傾向" };
+    }
+    return { level: "低め", reason: reasons.join("、") || "混みやすい条件が少ない" };
   }
 
   function detectDate(text, base) {
@@ -297,6 +652,10 @@
   function showCandidate(candidate) {
     if (!candidate) {
       candidateBox.hidden = true;
+      if (candidatePlace) {
+        candidatePlace.hidden = true;
+        candidatePlace.replaceChildren();
+      }
       return;
     }
     candidateTitle.textContent = candidate.title;
@@ -306,7 +665,59 @@
       candidate.location ? `場所: ${candidate.location}` : "場所未設定",
       candidate.travelMinutes ? `移動${candidate.travelMinutes}分` : "移動なし",
     ].join(" / ");
+    renderPlaceIntel(candidate.place);
     candidateBox.hidden = false;
+  }
+
+  function setCandidatePlaceStatus(text) {
+    if (!candidatePlace) {
+      showSummary(text);
+      return;
+    }
+    candidatePlace.replaceChildren(createTextBlock(text));
+    candidatePlace.hidden = false;
+  }
+
+  function renderPlaceIntel(place) {
+    if (!candidatePlace) {
+      return;
+    }
+    candidatePlace.replaceChildren();
+    if (!place) {
+      candidatePlace.hidden = true;
+      return;
+    }
+
+    const name = document.createElement("strong");
+    name.textContent = place.displayName || place.query || "場所情報";
+    candidatePlace.append(name);
+
+    if (Number.isFinite(place.lat) && Number.isFinite(place.lon)) {
+      candidatePlace.append(createTextBlock(`座標目安: ${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`));
+    } else {
+      candidatePlace.append(createTextBlock("座標目安: 取得できませんでした"));
+    }
+
+    const crowd = place.crowd ? `混雑目安: ${place.crowd.level}（${place.crowd.reason}）` : "混雑目安: 未取得";
+    candidatePlace.append(createTextBlock(crowd));
+    candidatePlace.append(createTextBlock(place.source || "混雑目安です。"));
+
+    if (place.mapUrl) {
+      const link = document.createElement("a");
+      link.href = place.mapUrl;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "地図で確認";
+      candidatePlace.append(link);
+    }
+
+    candidatePlace.hidden = false;
+  }
+
+  function createTextBlock(text) {
+    const block = document.createElement("div");
+    block.textContent = text;
+    return block;
   }
 
   function render() {
@@ -339,10 +750,21 @@
       timelineBoard.append(createTimelineRow(
         `${item.start}-${item.end}`,
         item.title,
-        item.location ? `場所: ${item.location}` : "場所未設定",
+        makeEventMeta(item),
         false,
       ));
     });
+  }
+
+  function makeEventMeta(item) {
+    const parts = [item.location ? `場所: ${item.location}` : "場所未設定"];
+    if (item.place && Number.isFinite(item.place.lat) && Number.isFinite(item.place.lon)) {
+      parts.push(`座標: ${item.place.lat.toFixed(4)}, ${item.place.lon.toFixed(4)}`);
+    }
+    if (item.place && item.place.crowd) {
+      parts.push(`混雑目安: ${item.place.crowd.level}`);
+    }
+    return parts.join(" / ");
   }
 
   function renderFreeTime(dayEvents) {
@@ -433,6 +855,67 @@
 
   function saveEvents() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  }
+
+  function scheduleUpcomingNotifications() {
+    clearNotificationTimers();
+    events.forEach(scheduleEventNotification);
+  }
+
+  function prepareNotificationPermission() {
+    if (!("Notification" in window)) {
+      return Promise.resolve("unsupported");
+    }
+    if (Notification.permission === "default") {
+      return Notification.requestPermission();
+    }
+    return Promise.resolve(Notification.permission);
+  }
+
+  async function scheduleEventNotification(event, permissionPromise) {
+    if (!event || !event.date || !event.start || !event.place) {
+      return;
+    }
+    if (!("Notification" in window)) {
+      showSummary("このブラウザは通知に対応していません。");
+      return;
+    }
+
+    const permission = permissionPromise ? await permissionPromise : Notification.permission;
+    if (permission !== "granted") {
+      showSummary("通知が許可されていないため、予定前の通知は表示できません。");
+      return;
+    }
+
+    const eventAt = new Date(`${event.date}T${event.start}`);
+    const notifyLeadMinutes = Math.max(15, Math.min(120, Number(event.travelMinutes || 30)));
+    const notifyAt = new Date(eventAt.getTime() - notifyLeadMinutes * 60 * 1000);
+    const delay = notifyAt.getTime() - Date.now();
+
+    if (delay < -60 * 1000 || delay > 24 * 60 * 60 * 1000) {
+      return;
+    }
+
+    const timerDelay = Math.max(1000, delay);
+    if (notificationTimers.has(event.id)) {
+      window.clearTimeout(notificationTimers.get(event.id));
+    }
+
+    const timerId = window.setTimeout(() => {
+      const crowd = event.place && event.place.crowd ? event.place.crowd.level : "未取得";
+      const reason = event.place && event.place.crowd ? event.place.crowd.reason : "場所情報なし";
+      new Notification("予定が近づいています", {
+        body: `${event.start} ${event.title} / ${event.location || "場所未設定"} / 混雑目安: ${crowd}（${reason}）`,
+      });
+      notificationTimers.delete(event.id);
+    }, timerDelay);
+
+    notificationTimers.set(event.id, timerId);
+  }
+
+  function clearNotificationTimers() {
+    notificationTimers.forEach((timerId) => window.clearTimeout(timerId));
+    notificationTimers.clear();
   }
 
   function createId() {

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>スーパー・スケジュールくん</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -151,9 +152,10 @@
             <p class="eyebrow">候補</p>
             <strong id="candidate-title"></strong>
             <span id="candidate-meta"></span>
+            <div class="place-intel" id="candidate-place" hidden></div>
             <button class="button primary" type="button" id="candidate-add-button">この候補を登録</button>
           </div>
-          <p class="planner-note">画像内の文字は、使用中のデバイスから選んだ画像だけをブラウザ内OCRで読み取ります。SNS連携は外部APIが必要なため、今は文面を貼り付けて候補化できます。</p>
+          <p class="planner-note">画像内の文字は、使用中のデバイスから選んだ画像だけをブラウザ内OCRで読み取ります。場所が見つかった場合は確認後に大まかな座標と混雑目安を調べ、予定が近づいたらブラウザ通知します。</p>
         </div>
       </div>
 
@@ -163,8 +165,12 @@
             <span>表示日</span>
             <input id="view-date" type="date">
           </label>
+          <button class="button" type="button" id="locate-routes-button">現在地から移動時間を調べる</button>
           <div class="planner-summary" id="planner-summary">予定を読み込んでいます。</div>
         </div>
+        <div class="route-status" id="route-status">現在地と予定場所を地図で確認できます。</div>
+        <div class="planner-map" id="planner-map" aria-label="現在地と予定場所の地図"></div>
+        <ul class="route-list" id="route-list"></ul>
         <div class="timeline-board" id="timeline-board" aria-live="polite"></div>
         <div class="free-time-board">
           <h3>空き時間</h3>
@@ -321,6 +327,7 @@
     スーパー・スケジュールくん | 予定管理を、もっと軽く。
   </footer>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="planner.js"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
