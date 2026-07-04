@@ -928,6 +928,19 @@ h3 {
   font-weight: 800;
 }
 
+.route-list li[role="button"] {
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.route-list li[role="button"]:hover,
+.route-list li[role="button"]:focus-visible {
+  border-color: var(--teal);
+  box-shadow: 0 10px 24px rgba(47, 127, 131, 0.16);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .route-list strong {
   display: block;
   font-size: 17px;

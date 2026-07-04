@@ -63,6 +63,8 @@
   let routeLines = [];
   let currentPosition = null;
   let locationWatchId = null;
+  let activeRouteEventId = "";
+  const placeLookupIds = new Set();
 
   const today = toDateInputValue(new Date());
   dateInput.value = today;
@@ -114,9 +116,10 @@
     if (!plannerUnlocked) {
       return;
     }
+    activeRouteEventId = "";
     render();
     renderRouteList([]);
-    setRouteStatus("現在地と予定場所を地図で確認できます。");
+    setRouteStatus("予定場所を地図に表示しています。場所をタッチすると現在地からの移動経路を確認できます。");
   });
 
   detectForm.addEventListener("submit", async (event) => {
@@ -730,7 +733,8 @@
         };
         initMap(currentPosition, 15);
         updateCurrentPositionMarker(currentPosition);
-        setRouteStatus(`現在地を表示しています。精度目安: 約${Math.round(currentPosition.accuracy || 0)}m`);
+        renderScheduleMap(getSelectedDayEvents());
+        setRouteStatus(`現在地を表示しています。精度目安: 約${Math.round(currentPosition.accuracy || 0)}m。予定場所をタッチすると経路を確認できます。`);
       },
       (error) => {
         setRouteStatus(`現在地を取得できませんでした: ${error.message || "位置情報が許可されていません。"}`);
@@ -752,6 +756,7 @@
     }
 
     locateRoutesButton.disabled = true;
+    activeRouteEventId = "";
     setRouteStatus("現在地を取得しています。");
 
     try {
@@ -759,7 +764,7 @@
       currentPosition = current;
       const routeResults = [];
       initMap(current, 15);
-      clearMapLayers();
+      clearRouteAndEventLayers();
       drawCurrentPosition(current);
 
       if (!dayEvents.length) {
@@ -785,23 +790,29 @@
 
         try {
           setRouteStatus(`${event.location} への移動時間を調べています。`);
-          const route = await fetchRouteEstimate(current, event.place);
+          const route = await fetchRouteEstimate(current, event.place, event);
           routeResults.push({ event, route });
-          drawEventRoute(event, route);
+          drawEventRoute(event, route, true);
         } catch (error) {
           routeResults.push({
             event,
             status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
           });
-          drawEventRoute(event, null);
+          drawEventRoute(event, null, true);
         }
       }
 
       saveEvents();
       render();
+      clearRouteAndEventLayers();
+      routeResults.forEach(({ event, route }) => {
+        if (event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
+          drawEventRoute(event, route || null);
+        }
+      });
       renderRouteList(routeResults);
       fitMapToContent(current, routeResults);
-      setRouteStatus("現在地から予定場所への移動時間を表示しています。渋滞情報はリアルタイム交通API未設定のため目安です。");
+      setRouteStatus("現在地から予定場所への移動時間を表示しています。各予定をタッチすると個別ルートに切り替わります。");
     } catch (error) {
       setRouteStatus(`移動時間を調べられませんでした: ${getErrorText(error)}`);
     } finally {
@@ -830,7 +841,7 @@
     });
   }
 
-  async function fetchRouteEstimate(current, place) {
+  async function fetchRouteEstimate(current, place, event = null) {
     const params = new URLSearchParams({
       overview: "full",
       geometries: "geojson",
@@ -848,12 +859,38 @@
       throw new Error("ルートが見つかりませんでした。");
     }
 
+    const distanceKm = Math.round((route.distance / 1000) * 10) / 10;
+    const durationMinutes = Math.max(1, Math.round(route.duration / 60));
     return {
       durationMinutes: Math.max(1, Math.round(route.duration / 60)),
-      distanceKm: Math.round((route.distance / 1000) * 10) / 10,
+      distanceKm,
       geometry: route.geometry,
-      trafficNote: "OSRMはリアルタイム渋滞情報に非対応です。渋滞確認には交通情報APIの追加が必要です。",
+      modes: buildTravelModes(distanceKm, durationMinutes),
+      trafficNote: buildTrafficNote(event ? new Date(`${event.date}T${event.start || "10:00"}`) : new Date()),
     };
+  }
+
+  function buildTravelModes(distanceKm, drivingMinutes) {
+    const walk = Math.max(1, Math.round((distanceKm / 4.8) * 60));
+    const bicycle = Math.max(1, Math.round((distanceKm / 14) * 60));
+    const transit = Math.max(5, Math.round(drivingMinutes * 1.25 + 8));
+    return [
+      { label: "車", minutes: drivingMinutes, note: "OSRMの車ルート" },
+      { label: "徒歩", minutes: walk, note: "距離からの目安" },
+      { label: "自転車", minutes: bicycle, note: "距離からの目安" },
+      { label: "公共交通", minutes: transit, note: "乗換待ちを含む概算" },
+    ];
+  }
+
+  function buildTrafficNote(date) {
+    const hour = date.getHours();
+    if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)) {
+      return "渋滞目安: 通勤・帰宅時間帯のため混みやすい可能性があります。リアルタイム交通APIは未接続です。";
+    }
+    if (hour >= 11 && hour <= 14) {
+      return "渋滞目安: 昼の外出時間帯です。中心部や商業施設周辺は混む可能性があります。リアルタイム交通APIは未接続です。";
+    }
+    return "渋滞目安: 現在は大きな混雑時間帯ではない見込みです。リアルタイム交通APIは未接続です。";
   }
 
   function initMap(current, zoom = 13) {
@@ -878,6 +915,13 @@
       currentMarker.remove();
       currentMarker = null;
     }
+    eventMarkers.forEach((marker) => marker.remove());
+    routeLines.forEach((line) => line.remove());
+    eventMarkers = [];
+    routeLines = [];
+  }
+
+  function clearRouteAndEventLayers() {
     eventMarkers.forEach((marker) => marker.remove());
     routeLines.forEach((line) => line.remove());
     eventMarkers = [];
@@ -924,17 +968,138 @@
       .bindPopup("現在地");
   }
 
-  function drawEventRoute(event, route) {
+  function drawEventRoute(event, route, openPopup = false) {
     const marker = window.L.marker([event.place.lat, event.place.lon])
       .addTo(plannerMap)
-      .bindPopup(`${event.title}<br>${event.location}`);
+      .bindPopup(`${escapeHtml(event.title)}<br>${escapeHtml(event.location || "場所未設定")}<br>タッチで経路を表示`);
+    marker.on("click", () => showEventRouteDetails(event.id));
     eventMarkers.push(marker);
+    if (openPopup && typeof marker.openPopup === "function") {
+      marker.openPopup();
+    }
 
     if (route && route.geometry) {
       const line = window.L.geoJSON(route.geometry, {
         style: { color: "#2f7f83", weight: 5, opacity: 0.75 },
       }).addTo(plannerMap);
       routeLines.push(line);
+    }
+  }
+
+  function drawSchedulePlaceMarker(event) {
+    if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
+      return;
+    }
+    const marker = window.L.marker([event.place.lat, event.place.lon])
+      .addTo(plannerMap)
+      .bindPopup(`${escapeHtml(event.title)}<br>${escapeHtml(event.location || "場所未設定")}<br>タッチで経路を表示`);
+    marker.on("click", () => showEventRouteDetails(event.id));
+    eventMarkers.push(marker);
+  }
+
+  function renderScheduleMap(dayEvents) {
+    if (!window.L || !mapContainer || !plannerMap) {
+      return;
+    }
+    if (activeRouteEventId) {
+      if (currentPosition) {
+        updateCurrentPositionMarker(currentPosition);
+      }
+      return;
+    }
+    clearRouteAndEventLayers();
+    if (currentPosition) {
+      updateCurrentPositionMarker(currentPosition);
+    }
+
+    const points = [];
+    dayEvents
+      .filter((event) => event.location)
+      .forEach((event) => {
+        if (event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
+          drawSchedulePlaceMarker(event);
+          points.push([event.place.lat, event.place.lon]);
+        } else if (!event.place) {
+          enrichEventPlaceForMap(event);
+        }
+      });
+
+    if (currentPosition) {
+      points.push([currentPosition.lat, currentPosition.lon]);
+    }
+
+    if (points.length > 1) {
+      plannerMap.fitBounds(window.L.latLngBounds(points), { padding: [28, 28] });
+    } else if (points.length === 1) {
+      plannerMap.setView(points[0], 14);
+    }
+  }
+
+  async function enrichEventPlaceForMap(event) {
+    if (!event || !event.location || placeLookupIds.has(event.id)) {
+      return;
+    }
+    placeLookupIds.add(event.id);
+    try {
+      const place = await fetchPlaceIntel(event.location, event);
+      events = events.map((item) => item.id === event.id
+        ? { ...item, place, placePending: false }
+        : item);
+      saveEvents();
+      render();
+    } finally {
+      placeLookupIds.delete(event.id);
+    }
+  }
+
+  async function showEventRouteDetails(eventId) {
+    if (!ensurePlannerAccess()) {
+      return;
+    }
+    const event = events.find((item) => item.id === eventId);
+    if (!event || !event.location) {
+      setRouteStatus("この予定には場所がありません。");
+      return;
+    }
+    if (!navigator.geolocation || !window.L) {
+      setRouteStatus("現在地または地図を利用できません。");
+      return;
+    }
+
+    setRouteStatus(`${event.location} への経路を調べています。`);
+    try {
+      activeRouteEventId = eventId;
+      const current = currentPosition || await getCurrentPosition();
+      currentPosition = current;
+      initMap(current, 15);
+      updateCurrentPositionMarker(current);
+
+      let target = event;
+      if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
+        const place = await fetchPlaceIntel(target.location, target);
+        events = events.map((item) => item.id === target.id ? { ...item, place, placePending: false } : item);
+        saveEvents();
+        target = events.find((item) => item.id === eventId) || { ...event, place };
+      }
+
+      if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
+        renderRouteList([{ event: target, status: "座標を取得できませんでした。" }]);
+        setRouteStatus("場所の座標を取得できませんでした。");
+        activeRouteEventId = "";
+        return;
+      }
+
+      clearRouteAndEventLayers();
+      updateCurrentPositionMarker(current);
+      const route = await fetchRouteEstimate(current, target.place, target);
+      drawEventRoute(target, route, true);
+      renderRouteList([{ event: target, route, selected: true }]);
+      fitMapToContent(current, [{ event: target }]);
+      setRouteStatus(`${target.title} へのルートを表示しています。移動手段ごとの時間は目安です。`);
+    } catch (error) {
+      activeRouteEventId = "";
+      renderRouteList([{ event, status: `経路を取得できませんでした: ${getErrorText(error)}` }]);
+      setRouteStatus(`経路を取得できませんでした: ${getErrorText(error)}`);
     }
   }
 
@@ -961,12 +1126,28 @@
 
     results.forEach(({ event, route, status }) => {
       const item = document.createElement("li");
+      if (event.location) {
+        item.tabIndex = 0;
+        item.setAttribute("role", "button");
+        item.addEventListener("click", () => showEventRouteDetails(event.id));
+        item.addEventListener("keydown", (keyboardEvent) => {
+          if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+            keyboardEvent.preventDefault();
+            showEventRouteDetails(event.id);
+          }
+        });
+      }
       const title = document.createElement("strong");
       title.textContent = event.title;
       item.append(title);
 
       if (route) {
-        item.append(createTextSpan(`${event.location}: 約${route.durationMinutes}分 / ${route.distanceKm}km`));
+        item.append(createTextSpan(`${event.location}: 車で約${route.durationMinutes}分 / ${route.distanceKm}km`));
+        if (Array.isArray(route.modes)) {
+          route.modes.forEach((mode) => {
+            item.append(createTextSpan(`${mode.label}: 約${mode.minutes}分（${mode.note}）`));
+          });
+        }
         if (event.place && event.place.crowd) {
           item.append(createTextSpan(`混雑目安: ${event.place.crowd.level}（${event.place.crowd.reason}）`));
         }
@@ -983,6 +1164,15 @@
     const span = document.createElement("span");
     span.textContent = text;
     return span;
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   function setRouteStatus(text) {
@@ -1285,6 +1475,7 @@
 
     renderTimeline(dayEvents);
     renderFreeTime(dayEvents);
+    renderScheduleMap(dayEvents);
     showSummary(`${formatDate(date)}: ${dayEvents.length}件の予定`);
   }
 
