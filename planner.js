@@ -60,6 +60,8 @@
   let currentMarker = null;
   let eventMarkers = [];
   let routeLines = [];
+  let currentPosition = null;
+  let locationWatchId = null;
 
   const today = toDateInputValue(new Date());
   dateInput.value = today;
@@ -293,6 +295,7 @@
     setPlannerAuthStatus(message, "success");
     render();
     initializeMapOverview();
+    startCurrentLocationTracking();
     scheduleUpcomingNotifications();
   }
 
@@ -591,17 +594,49 @@
       return;
     }
 
-    const tokyo = { lat: 35.68124, lon: 139.76713 };
-    plannerMap = window.L.map(mapContainer).setView([tokyo.lat, tokyo.lon], 11);
+    const japan = { lat: 36.2048, lon: 138.2529 };
+    plannerMap = window.L.map(mapContainer).setView([japan.lat, japan.lon], 5);
     window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(plannerMap);
 
-    overviewMarker = window.L.marker([tokyo.lat, tokyo.lon])
-      .addTo(plannerMap)
-      .bindPopup("地図を表示中。現在地ボタンであなたの現在地と予定場所を表示します。");
+    setRouteStatus("現在地を取得しています。ブラウザの位置情報を許可してください。");
     window.setTimeout(() => plannerMap.invalidateSize(), 120);
+  }
+
+  function startCurrentLocationTracking() {
+    if (!navigator.geolocation) {
+      setRouteStatus("このブラウザは現在地取得に対応していません。");
+      return;
+    }
+
+    if (!window.L) {
+      setRouteStatus("地図ライブラリを読み込めませんでした。通信状態を確認してください。");
+      return;
+    }
+
+    if (locationWatchId !== null) {
+      navigator.geolocation.clearWatch(locationWatchId);
+    }
+
+    setRouteStatus("現在地を取得しています。ブラウザの位置情報を許可してください。");
+    locationWatchId = navigator.geolocation.watchPosition(
+      (position) => {
+        currentPosition = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        };
+        initMap(currentPosition, 15);
+        updateCurrentPositionMarker(currentPosition);
+        setRouteStatus(`現在地を表示しています。精度目安: 約${Math.round(currentPosition.accuracy || 0)}m`);
+      },
+      (error) => {
+        setRouteStatus(`現在地を取得できませんでした: ${error.message || "位置情報が許可されていません。"}`);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30 * 1000 },
+    );
   }
 
   async function handleRouteLookup() {
@@ -620,9 +655,10 @@
     setRouteStatus("現在地を取得しています。");
 
     try {
-      const current = await getCurrentPosition();
+      const current = currentPosition || await getCurrentPosition();
+      currentPosition = current;
       const routeResults = [];
-      initMap(current);
+      initMap(current, 15);
       clearMapLayers();
       drawCurrentPosition(current);
 
@@ -686,6 +722,7 @@
         (position) => resolve({
           lat: position.coords.latitude,
           lon: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         }),
         (error) => reject(new Error(error.message || "現在地の取得が許可されませんでした。")),
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 5 * 60 * 1000 },
@@ -719,15 +756,15 @@
     };
   }
 
-  function initMap(current) {
+  function initMap(current, zoom = 13) {
     if (!plannerMap) {
-      plannerMap = window.L.map(mapContainer).setView([current.lat, current.lon], 13);
+      plannerMap = window.L.map(mapContainer).setView([current.lat, current.lon], zoom);
       window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(plannerMap);
     } else {
-      plannerMap.setView([current.lat, current.lon], 13);
+      plannerMap.setView([current.lat, current.lon], zoom);
       window.setTimeout(() => plannerMap.invalidateSize(), 50);
     }
   }
@@ -748,6 +785,23 @@
   }
 
   function drawCurrentPosition(current) {
+    updateCurrentPositionMarker(current);
+    if (currentMarker && typeof currentMarker.openPopup === "function") {
+      currentMarker.openPopup();
+    }
+  }
+
+  function updateCurrentPositionMarker(current) {
+    if (!plannerMap || !current) {
+      return;
+    }
+    if (overviewMarker) {
+      overviewMarker.remove();
+      overviewMarker = null;
+    }
+    if (currentMarker) {
+      currentMarker.remove();
+    }
     const circle = window.L.circleMarker([current.lat, current.lon], {
       radius: 10,
       color: "#1769aa",
@@ -755,11 +809,19 @@
       fillColor: "#42a5f5",
       fillOpacity: 0.85,
     });
+    const accuracyCircle = Number.isFinite(current.accuracy)
+      ? window.L.circle([current.lat, current.lon], {
+          radius: Math.min(Math.max(current.accuracy, 20), 1000),
+          color: "#1769aa",
+          weight: 1,
+          fillColor: "#42a5f5",
+          fillOpacity: 0.08,
+        })
+      : null;
     const marker = window.L.marker([current.lat, current.lon]);
-    currentMarker = window.L.layerGroup([circle, marker])
+    currentMarker = window.L.layerGroup([accuracyCircle, circle, marker].filter(Boolean))
       .addTo(plannerMap)
       .bindPopup("現在地");
-    currentMarker.openPopup();
   }
 
   function drawEventRoute(event, route) {
