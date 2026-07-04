@@ -366,7 +366,7 @@
     const date = dateInput.value;
     const start = startInput.value;
     const end = endInput.value;
-    const location = cleanText(locationInput.value, 48);
+    let location = cleanText(locationInput.value, 48);
     const travelMinutes = clampNumber(travelInput.value, 0, 240);
 
     if (!title || !date || !start || !end) {
@@ -377,6 +377,15 @@
     if (timeToMinutes(end) <= timeToMinutes(start)) {
       showSummary("終了時刻は開始時刻より後にしてください。");
       return null;
+    }
+
+    let locationConfirmed = false;
+    if (!location) {
+      const inferredLocation = inferLocationFromTitle(title);
+      if (inferredLocation && window.confirm(`予定名から「${inferredLocation}」を場所として検出しました。この予定の場所ですか？`)) {
+        location = inferredLocation;
+        locationConfirmed = true;
+      }
     }
 
     const event = {
@@ -390,7 +399,9 @@
       createdAt: new Date().toISOString(),
     };
 
-    if (location) {
+    if (locationConfirmed) {
+      event.placePending = true;
+    } else if (location) {
       const confirmed = window.confirm(`「${location}」はこの予定の場所ですか？`);
       if (confirmed) {
         event.placePending = true;
@@ -426,8 +437,9 @@
     const start = detectedStart || "10:00";
     const startMinutes = timeToMinutes(start);
     const end = detectedRange.end || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
-    const location = detectLocation(scheduleText);
-    const title = detectTitle(scheduleText, location);
+    const detectedLocation = detectLocation(scheduleText);
+    const title = detectTitle(scheduleText, detectedLocation);
+    const location = detectedLocation || inferLocationFromTitle(title);
     if (!title || title === location) {
       setDetectMessage("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
       return null;
@@ -1630,7 +1642,30 @@
       return cleanLocation(atPlace[1]);
     }
 
-    const suffixPlace = normalized.match(/([^\s、。]{1,32}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
+    const titleLocation = inferLocationFromTitle(normalized);
+    if (titleLocation) {
+      return titleLocation;
+    }
+
+    const suffixPlace = normalized.match(/([^\s、。]{1,32}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|博物館|美術館|資料館|水族館|動物園|映画館|劇場|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
+    return cleanLocation(suffixPlace ? suffixPlace[1] : "");
+  }
+
+  function inferLocationFromTitle(title) {
+    const text = cleanText(normalizeScheduleText(title), 80)
+      .replace(/[、。]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) {
+      return "";
+    }
+
+    const destination = text.match(/^(.{2,48}?)(?:に|へ)(?:行く|いく|行き|向かう|訪問|集合|到着|出発|寄る|行って|行こ)/);
+    if (destination) {
+      return cleanLocation(destination[1]);
+    }
+
+    const suffixPlace = text.match(/([^\s、。]{2,48}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|博物館|美術館|資料館|水族館|動物園|映画館|劇場|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
     return cleanLocation(suffixPlace ? suffixPlace[1] : "");
   }
 
@@ -1648,6 +1683,9 @@
       .trim();
 
     const eventWord = withoutDate.match(/(誕生日パーティー?|誕生日|パーティー?|会議|打ち合わせ|ミーティング|面談|面接|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/);
+    if (location && /^(行く|いく|行き|向かう|訪問|寄る|到着|出発)?$/.test(withoutDate)) {
+      return cleanText(`${location}に行く`, 48);
+    }
     return cleanText(eventWord ? eventWord[1] : withoutDate, 48);
   }
 
@@ -1992,8 +2030,14 @@
       showSummary("終了時刻は開始時刻より後にしてください。編集をやり直してください。");
       return;
     }
-    const location = promptClean("場所", target.location || "", 48);
+    let location = promptClean("場所", target.location || "", 48);
     if (location === null) return;
+    if (!location) {
+      const inferredLocation = inferLocationFromTitle(title);
+      if (inferredLocation && window.confirm(`予定名から「${inferredLocation}」を場所として検出しました。この予定の場所ですか？`)) {
+        location = inferredLocation;
+      }
+    }
     const travelMinutes = promptNumber("移動時間（分）", Number(target.travelMinutes || 0), 0, 240);
     if (travelMinutes === null) return;
 
