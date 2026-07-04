@@ -1,6 +1,7 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
+  const CLOUD_EVENTS_TABLE = "events";
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
@@ -55,9 +56,14 @@
     return;
   }
 
-  let events = loadEvents();
+  let events = [];
   let detectedCandidate = null;
   let plannerUnlocked = false;
+  let plannerStorageMode = "locked";
+  let plannerUserId = "";
+  let plannerCloudWarningShown = false;
+  let cloudSyncTimer = null;
+  let cloudSyncInFlight = false;
   let lastDetectMessage = "";
   const notificationTimers = new Map();
   let plannerMap = null;
@@ -234,19 +240,18 @@
   async function initPlannerAccess() {
     lockPlanner();
 
-    if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
-      unlockPlanner("開発者テストモードで開いています。");
-      return;
-    }
-
     if (!plannerSupabase) {
+      if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
+        unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
+        return;
+      }
       setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "warning");
       return;
     }
 
     plannerSupabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        unlockPlanner("ログイン中です。予定アプリを使えます。");
+        unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session });
       } else if (localStorage.getItem(ACCESS_KEY) !== ACCESS_CODE) {
         lockPlanner();
       }
@@ -254,7 +259,12 @@
 
     const { data } = await plannerSupabase.auth.getSession();
     if (data.session) {
-      unlockPlanner("ログイン中です。予定アプリを使えます。");
+      unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
+      return;
+    }
+
+    if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
+      unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
     }
   }
 
@@ -281,7 +291,7 @@
       return;
     }
     if (data.session) {
-      unlockPlanner("ログイン中です。予定アプリを使えます。");
+      unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
     }
   }
 
@@ -316,7 +326,7 @@
     }
 
     if (data.session) {
-      unlockPlanner("登録してログインしました。予定アプリを使えます。");
+      unlockPlanner("登録してログインしました。予定アプリを使えます。", { mode: "user", session: data.session });
       return;
     }
 
@@ -330,11 +340,15 @@
       return;
     }
     localStorage.setItem(ACCESS_KEY, ACCESS_CODE);
-    unlockPlanner("開発者テストモードで開いています。");
+    unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
   }
 
   function lockPlanner() {
     plannerUnlocked = false;
+    plannerStorageMode = "locked";
+    plannerUserId = "";
+    plannerCloudWarningShown = false;
+    events = [];
     if (plannerGate) {
       plannerGate.classList.remove("gate-unlock", "gate-shake");
       plannerGate.hidden = false;
@@ -346,8 +360,16 @@
     setPlannerAuthStatus("予定アプリはログイン後に使えます。", "warning");
   }
 
-  function unlockPlanner(message) {
+  async function unlockPlanner(message, options = {}) {
     plannerUnlocked = true;
+    plannerStorageMode = options.mode === "user" ? "user" : "test";
+    plannerUserId = options.session && options.session.user ? options.session.user.id : "";
+    plannerCloudWarningShown = false;
+    if (plannerStorageMode === "user") {
+      await loadUserEvents(options.session);
+    } else {
+      events = loadEvents(getLocalEventsKey());
+    }
     if (plannerGate) {
       animateElement(plannerGate, "gate-unlock", 520);
       window.setTimeout(() => {
@@ -360,7 +382,9 @@
       plannerApp.hidden = false;
       animateElement(plannerApp, "app-reveal", 620);
     }
-    setPlannerAuthStatus(message, "success");
+    if (!plannerCloudWarningShown) {
+      setPlannerAuthStatus(message, "success");
+    }
     pruneExpiredEvents();
     render();
     initializeMapOverview();
@@ -2348,9 +2372,19 @@
     return item;
   }
 
-  function loadEvents() {
+  function getLocalEventsKey() {
+    if (plannerStorageMode === "user" && plannerUserId) {
+      return `${STORAGE_KEY}:user:${plannerUserId}`;
+    }
+    if (plannerStorageMode === "test") {
+      return `${STORAGE_KEY}:test`;
+    }
+    return STORAGE_KEY;
+  }
+
+  function loadEvents(key = getLocalEventsKey()) {
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
@@ -2358,7 +2392,121 @@
   }
 
   function saveEvents() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    localStorage.setItem(getLocalEventsKey(), JSON.stringify(events));
+    if (plannerStorageMode === "user" && plannerUserId) {
+      scheduleCloudSync();
+    }
+  }
+
+  async function loadUserEvents(session) {
+    if (!session || !session.user) {
+      events = [];
+      return;
+    }
+    plannerUserId = session.user.id;
+    events = loadEvents(getLocalEventsKey());
+    if (!plannerSupabase) {
+      showCloudStorageWarning("クラウド保存を読み込めませんでした。この端末内の予定だけを表示しています。");
+      return;
+    }
+
+    const { data, error } = await plannerSupabase
+      .from(CLOUD_EVENTS_TABLE)
+      .select("id,payload,updated_at,created_at")
+      .eq("user_id", plannerUserId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      showCloudStorageWarning(`クラウド予定を読み込めませんでした: ${getErrorText(error)}`);
+      return;
+    }
+
+    events = (Array.isArray(data) ? data : [])
+      .map((row) => normalizeCloudEvent(row))
+      .filter(Boolean);
+    localStorage.setItem(getLocalEventsKey(), JSON.stringify(events));
+  }
+
+  function normalizeCloudEvent(row) {
+    if (!row) {
+      return null;
+    }
+    const payload = row.payload && typeof row.payload === "object" ? row.payload : row;
+    if (!payload.title || !payload.date) {
+      return null;
+    }
+    return {
+      ...payload,
+      id: payload.id || row.id || createId(),
+    };
+  }
+
+  function scheduleCloudSync() {
+    if (cloudSyncTimer !== null) {
+      window.clearTimeout(cloudSyncTimer);
+    }
+    cloudSyncTimer = window.setTimeout(syncCloudEventsNow, 500);
+  }
+
+  async function syncCloudEventsNow() {
+    cloudSyncTimer = null;
+    if (cloudSyncInFlight || plannerStorageMode !== "user" || !plannerUserId || !plannerSupabase) {
+      return;
+    }
+    cloudSyncInFlight = true;
+    try {
+      const rows = events.map((event) => ({
+        id: event.id,
+        user_id: plannerUserId,
+        payload: event,
+        created_at: event.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { data: existing, error: selectError } = await plannerSupabase
+        .from(CLOUD_EVENTS_TABLE)
+        .select("id")
+        .eq("user_id", plannerUserId);
+      if (selectError) {
+        throw selectError;
+      }
+
+      const currentIds = new Set(events.map((event) => event.id));
+      const staleIds = (Array.isArray(existing) ? existing : [])
+        .map((row) => row.id)
+        .filter((id) => !currentIds.has(id));
+      if (staleIds.length) {
+        const { error: deleteError } = await plannerSupabase
+          .from(CLOUD_EVENTS_TABLE)
+          .delete()
+          .eq("user_id", plannerUserId)
+          .in("id", staleIds);
+        if (deleteError) {
+          throw deleteError;
+        }
+      }
+
+      if (rows.length) {
+        const { error: upsertError } = await plannerSupabase
+          .from(CLOUD_EVENTS_TABLE)
+          .upsert(rows, { onConflict: "id" });
+        if (upsertError) {
+          throw upsertError;
+        }
+      }
+    } catch (error) {
+      showCloudStorageWarning(`クラウド予定を保存できませんでした: ${getErrorText(error)}`);
+    } finally {
+      cloudSyncInFlight = false;
+    }
+  }
+
+  function showCloudStorageWarning(message) {
+    if (plannerCloudWarningShown) {
+      return;
+    }
+    plannerCloudWarningShown = true;
+    setPlannerAuthStatus(message, "warning");
   }
 
   function scheduleUpcomingNotifications() {
