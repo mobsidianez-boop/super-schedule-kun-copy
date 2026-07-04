@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=character-pin-1">
+  <link rel="stylesheet" href="style.css?v=character-walk-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -200,6 +200,11 @@
         </div>
         <div class="route-status" id="route-status">現在地と予定場所を地図で確認できます。</div>
         <div class="planner-map" id="planner-map" aria-label="現在地と予定場所の地図"></div>
+        <div class="map-legend" aria-label="地図のピン説明">
+          <span><i class="legend-current"></i>現在地</span>
+          <span><i class="legend-event"></i>予定場所</span>
+          <span><i class="legend-route"></i>移動ルート</span>
+        </div>
         <ul class="route-list" id="route-list"></ul>
         <section class="schedule-board" aria-label="表示日のスケジュール表">
           <div class="schedule-board-head">
@@ -379,7 +384,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=character-pin-1"></script>
+  <script src="planner.js?v=character-walk-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
