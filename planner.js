@@ -289,7 +289,12 @@
     }
 
     setPlannerAuthStatus("ログインしています。");
-    const { data, error } = await plannerSupabase.auth.signInWithPassword({ email, password });
+    let { data, error } = await plannerSupabase.auth.signInWithPassword({ email, password });
+    if (isFetchFailure(error)) {
+      const fallback = await signInPlannerViaRest(email, password);
+      data = fallback.data;
+      error = fallback.error;
+    }
     if (error) {
       setPlannerAuthStatus(`ログインできませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
@@ -316,13 +321,18 @@
     }
 
     setPlannerAuthStatus("登録しています。");
-    const { data, error } = await plannerSupabase.auth.signUp({
+    let { data, error } = await plannerSupabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
       },
     });
+    if (isFetchFailure(error)) {
+      const fallback = await signupPlannerViaRest(email, password);
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       setPlannerAuthStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
@@ -336,6 +346,89 @@
     }
 
     setPlannerAuthStatus("登録しました。確認メールが必要な設定の場合は、メール内のリンクを開いてからログインしてください。", "success");
+  }
+
+  async function signInPlannerViaRest(email, password) {
+    try {
+      const response = await authFetch("/token", {
+        search: { grant_type: "password" },
+        body: { email, password },
+      });
+      if (!response.ok) {
+        return { data: null, error: await readAuthError(response) };
+      }
+      const session = await response.json();
+      if (session.access_token && session.refresh_token && plannerSupabase) {
+        await plannerSupabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+      }
+      return { data: { session }, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  }
+
+  async function signupPlannerViaRest(email, password) {
+    try {
+      const response = await authFetch("/signup", {
+        search: { redirect_to: CONFIG.authRedirectUrl || window.location.href },
+        body: { email, password, data: {} },
+      });
+      if (!response.ok) {
+        return { data: null, error: await readAuthError(response) };
+      }
+      const result = await response.json();
+      if (result.access_token && result.refresh_token && plannerSupabase) {
+        await plannerSupabase.auth.setSession({
+          access_token: result.access_token,
+          refresh_token: result.refresh_token,
+        });
+        return { data: { session: result }, error: null };
+      }
+      return { data: { session: null, user: result.user || result }, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  }
+
+  async function authFetch(path, options = {}) {
+    const url = new URL(`${CONFIG.supabaseUrl.replace(/\/$/, "")}/auth/v1${path}`);
+    Object.entries(options.search || {}).forEach(([key, value]) => {
+      if (value) {
+        url.searchParams.set(key, value);
+      }
+    });
+    return fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        apikey: CONFIG.supabaseAnonKey,
+        Authorization: `Bearer ${CONFIG.supabaseAnonKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(options.body || {}),
+    });
+  }
+
+  async function readAuthError(response) {
+    try {
+      const body = await response.json();
+      return new Error(body.msg || body.message || body.error_description || body.error || `HTTP ${response.status}`);
+    } catch {
+      return new Error(`HTTP ${response.status}`);
+    }
+  }
+
+  function getRawErrorText(error) {
+    if (!error) {
+      return "";
+    }
+    return error.message || error.details || String(error);
+  }
+
+  function isFetchFailure(error) {
+    return Boolean(error && /failed to fetch|fetch failed|network|load failed/i.test(getRawErrorText(error)));
   }
 
   function unlockWithCode() {
@@ -768,7 +861,11 @@
     if (!error) {
       return "原因不明のエラーです。";
     }
-    return error.message || String(error);
+    const message = getRawErrorText(error);
+    if (/failed to fetch|fetch failed|network|load failed/i.test(message)) {
+      return "Supabaseに接続できませんでした。プロジェクトURL、公開キー、プロジェクトの停止状態、ネットワーク制限を確認してください。";
+    }
+    return message;
   }
 
   async function fetchPlaceIntel(location, event) {
