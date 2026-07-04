@@ -146,6 +146,10 @@
   }
 
   candidateAddButton.addEventListener("click", () => {
+    addDetectedCandidate();
+  });
+
+  function addDetectedCandidate() {
     if (!ensurePlannerAccess()) {
       return;
     }
@@ -163,7 +167,7 @@
     detectedCandidate = null;
     candidateBox.hidden = true;
     render();
-  });
+  }
 
   if (plannerAuthForm) {
     plannerAuthForm.addEventListener("submit", async (event) => {
@@ -360,7 +364,7 @@
   }
 
   function detectSchedule(rawText) {
-    const text = cleanText(rawText, 280);
+    const text = cleanText(normalizeScheduleText(rawText), 280);
     if (!text) {
       showSummary("候補にしたい文章を入力してください。");
       return null;
@@ -404,7 +408,7 @@
       .split(/[\n。！？!?]/)
       .map((line) => line.trim())
       .filter(Boolean);
-    const candidates = lines.length ? lines : [text];
+    const candidates = lines.length > 1 ? [text, ...lines] : [text];
 
     const scored = candidates
       .map((line) => ({ line, score: scoreScheduleLine(line) }))
@@ -425,15 +429,26 @@
   }
 
   function hasDateSignal(text) {
-    return /(20\d{2}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2}|\d{1,2}月\d{1,2}日|今日|きょう|明日|あした|明後日|あさって|月曜|火曜|水曜|木曜|金曜|土曜|日曜)/.test(text);
+    return /(20\d{2}[\/.\-年]\d{1,2}[\/.\-月]\d{1,2}日?|\d{1,2}[\/.\-]\d{1,2}|\d{1,2}月\d{1,2}日|今日|きょう|明日|あした|明後日|あさって|月曜|火曜|水曜|木曜|金曜|土曜|日曜)/.test(text);
   }
 
   function hasTimeSignal(text) {
-    return /([01]?\d|2[0-3]):[0-5]\d|([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/.test(text);
+    return /([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)|([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/.test(text);
   }
 
   function hasEventWord(text) {
     return /(会議|打ち合わせ|ミーティング|面談|面接|予約|集合|待ち合わせ|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/.test(text);
+  }
+
+  function normalizeScheduleText(value) {
+    return String(value || "")
+      .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+      .replace(/[：]/g, ":")
+      .replace(/[．]/g, ".")
+      .replace(/[／]/g, "/")
+      .replace(/(\d)\s*[:.]\s*(\d{2})/g, "$1:$2")
+      .replace(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, "$1月$2日")
+      .replace(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, "$1年$2月$3日");
   }
 
   async function handleImageSelection() {
@@ -478,14 +493,14 @@
       }
 
       detectText.value = text;
-      setOcrStatus("読み取りました。候補を作成しました。", 1);
-      await makeCandidateFromText();
+      setOcrStatus("読み取りました。予定候補を確認しています。", 1);
+      await makeCandidateFromText({ offerAutoAdd: true });
     } catch (error) {
       setOcrStatus(`読み取れませんでした: ${getErrorText(error)}`, 0);
     }
   }
 
-  async function makeCandidateFromText() {
+  async function makeCandidateFromText(options = {}) {
     detectedCandidate = detectSchedule(detectText.value);
     if (detectedCandidate && detectedCandidate.location) {
       const confirmed = window.confirm(`「${detectedCandidate.location}」はこの予定の場所ですか？`);
@@ -500,6 +515,18 @@
       }
     }
     showCandidate(detectedCandidate);
+    if (detectedCandidate && options.offerAutoAdd) {
+      offerCandidateAutoAdd();
+    }
+  }
+
+  function offerCandidateAutoAdd() {
+    const ok = window.confirm(`画像から予定候補を検出しました。\n「${detectedCandidate.title}」を予定に追加しますか？`);
+    if (ok) {
+      addDetectedCandidate();
+    } else {
+      setOcrStatus("候補を作成しました。内容を確認して「この候補を登録」を押してください。", 1);
+    }
   }
 
   async function enrichCandidatePlaceInBackground(candidate) {
@@ -988,12 +1015,17 @@
   }
 
   function detectDate(text, base) {
-    const ymd = text.match(/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})/);
+    const ymd = text.match(/(20\d{2})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/);
     if (ymd) {
       return toDateInputValue(new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])));
     }
 
-    const md = text.match(/(?:^|[^\d])(\d{1,2})[/-](\d{1,2})(?:[^\d]|$)/);
+    const ymdJapanese = text.match(/(20\d{2})年(\d{1,2})月(\d{1,2})日/);
+    if (ymdJapanese) {
+      return toDateInputValue(new Date(Number(ymdJapanese[1]), Number(ymdJapanese[2]) - 1, Number(ymdJapanese[3])));
+    }
+
+    const md = text.match(/(?:^|[^\d])(\d{1,2})[\/.\-](\d{1,2})(?:[^\d]|$)/);
     if (md) {
       const month = Number(md[1]);
       const day = Number(md[2]);
@@ -1019,7 +1051,7 @@
   }
 
   function detectTime(text) {
-    const colon = text.match(/([01]?\d|2[0-3]):([0-5]\d)/);
+    const colon = text.match(/([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)/);
     if (colon) {
       return `${colon[1].padStart(2, "0")}:${colon[2]}`;
     }
@@ -1065,10 +1097,11 @@
 
   function stripDateTime(text) {
     return String(text || "")
-      .replace(/20\d{2}[/-]\d{1,2}[/-]\d{1,2}/g, " ")
-      .replace(/\d{1,2}[/-]\d{1,2}/g, " ")
+      .replace(/20\d{2}[\/.\-]\d{1,2}[\/.\-]\d{1,2}/g, " ")
+      .replace(/20\d{2}年\d{1,2}月\d{1,2}日/g, " ")
+      .replace(/\d{1,2}[\/.\-]\d{1,2}/g, " ")
       .replace(/\d{1,2}月\d{1,2}日/g, " ")
-      .replace(/([01]?\d|2[0-3]):[0-5]\d/g, " ")
+      .replace(/([01]?\d|2[0-3])[:.][0-5]\d/g, " ")
       .replace(/([01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g, " ")
       .replace(/明後日|あさって|明日|あした|今日|きょう/g, " ")
       .replace(/\s+/g, " ")
