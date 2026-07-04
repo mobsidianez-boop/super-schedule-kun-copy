@@ -903,6 +903,10 @@ h3 {
   font-weight: 900;
 }
 
+.route-status.completed-pulse {
+  animation: completionPulse 1.2s ease both;
+}
+
 .planner-map {
   height: 340px;
   margin: 18px 22px 0;
@@ -951,6 +955,92 @@ h3 {
   color: var(--muted);
   font-size: 14px;
   font-weight: 900;
+}
+
+.all-events-board {
+  margin: 18px 22px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.all-events-board h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.all-events-board ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.all-events-board li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.all-events-board li.just-added,
+.timeline-item.just-added {
+  animation: eventAdded 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.all-events-board strong,
+.all-events-board span {
+  min-width: 0;
+}
+
+.all-events-board span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@keyframes eventAdded {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    box-shadow: 0 0 0 rgba(47, 127, 131, 0);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(0) scale(1.01);
+    box-shadow: 0 14px 28px rgba(47, 127, 131, 0.18);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes completionPulse {
+  0% {
+    color: var(--ink);
+    transform: translateY(-4px);
+  }
+  35% {
+    color: var(--teal);
+    transform: translateY(0);
+  }
+  100% {
+    color: var(--muted);
+    transform: translateY(0);
+  }
 }
 
 .timeline-board {
@@ -1362,6 +1452,14 @@ footer {
   .page-title {
     padding-left: 5vw;
     padding-right: 5vw;
+  }
+
+  .all-events-board li {
+    grid-template-columns: 1fr;
+  }
+
+  .event-actions {
+    justify-content: flex-start;
   }
 
   .grid.three,

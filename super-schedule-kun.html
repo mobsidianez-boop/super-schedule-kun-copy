@@ -201,6 +201,10 @@
         <div class="route-status" id="route-status">現在地と予定場所を地図で確認できます。</div>
         <div class="planner-map" id="planner-map" aria-label="現在地と予定場所の地図"></div>
         <ul class="route-list" id="route-list"></ul>
+        <section class="all-events-board" aria-label="登録されているすべての予定">
+          <h3>登録済みの予定</h3>
+          <ul id="all-events-list"></ul>
+        </section>
         <div class="timeline-board" id="timeline-board" aria-live="polite"></div>
         <div class="free-time-board">
           <h3>空き時間</h3>
@@ -367,7 +371,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/super-schedule-kun.html"
     };
   </script>
-  <script src="planner.js?v=place-candidate-confirm-1"></script>
+  <script src="planner.js?v=all-events-map-edit-anim-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

@@ -44,6 +44,7 @@
   const routeStatus = document.querySelector("#route-status");
   const mapContainer = document.querySelector("#planner-map");
   const routeList = document.querySelector("#route-list");
+  const allEventsList = document.querySelector("#all-events-list");
   const timelineBoard = document.querySelector("#timeline-board");
   const freeTimeList = document.querySelector("#free-time-list");
 
@@ -64,6 +65,9 @@
   let currentPosition = null;
   let locationWatchId = null;
   let activeRouteEventId = "";
+  let expiredNotice = "";
+  let animatedEventId = "";
+  let expirySweepId = null;
   const placeLookupIds = new Set();
 
   const today = toDateInputValue(new Date());
@@ -84,9 +88,13 @@
       return;
     }
     events = [nextEvent, ...events];
+    animatedEventId = nextEvent.id;
+    pruneExpiredEvents();
     saveEvents();
-    scheduleEventNotification(nextEvent, permissionPromise);
-    enrichEventPlaceInBackground(nextEvent);
+    if (events.some((item) => item.id === nextEvent.id)) {
+      scheduleEventNotification(nextEvent, permissionPromise);
+      enrichEventPlaceInBackground(nextEvent);
+    }
     viewDateInput.value = nextEvent.date;
     form.reset();
     dateInput.value = nextEvent.date;
@@ -107,6 +115,7 @@
       return;
     }
     events = [];
+    expiredNotice = "";
     saveEvents();
     clearNotificationTimers();
     render();
@@ -163,9 +172,13 @@
     const permissionPromise = prepareNotificationPermission();
     const nextEvent = { ...detectedCandidate, id: createId(), createdAt: new Date().toISOString() };
     events = [nextEvent, ...events];
+    animatedEventId = nextEvent.id;
+    pruneExpiredEvents();
     saveEvents();
-    scheduleEventNotification(nextEvent, permissionPromise);
-    enrichEventPlaceInBackground(nextEvent);
+    if (events.some((item) => item.id === nextEvent.id)) {
+      scheduleEventNotification(nextEvent, permissionPromise);
+      enrichEventPlaceInBackground(nextEvent);
+    }
     viewDateInput.value = detectedCandidate.date;
     detectText.value = "";
     detectedCandidate = null;
@@ -303,10 +316,30 @@
       plannerApp.hidden = false;
     }
     setPlannerAuthStatus(message, "success");
+    pruneExpiredEvents();
     render();
     initializeMapOverview();
     startCurrentLocationTracking();
+    startExpirySweep();
     scheduleUpcomingNotifications();
+  }
+
+  function startExpirySweep() {
+    if (expirySweepId !== null) {
+      window.clearInterval(expirySweepId);
+    }
+    expirySweepId = window.setInterval(() => {
+      if (!plannerUnlocked) {
+        return;
+      }
+      const removed = pruneExpiredEvents();
+      if (removed) {
+        const notice = expiredNotice || "終了済みの予定を自動削除しました。";
+        render();
+        renderRouteList([]);
+        setRouteStatus(notice);
+      }
+    }, 60 * 1000);
   }
 
   function ensurePlannerAccess() {
@@ -841,11 +874,31 @@
       keyword && context ? `${keyword} ${context}` : "",
       keyword && context ? `${context} ${keyword}` : "",
       keyword,
+      ...buildNameSearchVariants(keyword || normalized),
       normalized,
       context,
     ]).filter((query) => query.length >= 2);
 
     return { original: location, normalized, context, keyword, queries };
+  }
+
+  function buildNameSearchVariants(name) {
+    const base = cleanText(name, 48);
+    if (!base) {
+      return [];
+    }
+    const variants = [];
+    const withoutSuffix = base.replace(/(本店|支店|店|寺|神社|駅|公園|病院|会館|センター|ホール|ホテル|ビル)$/u, "");
+    if (withoutSuffix && withoutSuffix !== base && withoutSuffix.length >= 2) {
+      variants.push(withoutSuffix);
+    }
+    if (/[\s・･]/.test(base)) {
+      variants.push(...base.split(/[\s・･]+/).filter((part) => part.length >= 2));
+    }
+    if (!/[都道府県市区町村丁目]/.test(base) && base.length >= 4) {
+      variants.push(base.slice(0, Math.ceil(base.length * 0.75)));
+    }
+    return variants;
   }
 
   function extractAddressContext(text) {
@@ -967,7 +1020,7 @@
   }
 
   async function handleRouteLookup() {
-    const dayEvents = getSelectedDayEvents().filter((item) => item.location);
+    const dayEvents = getActiveEvents().filter((item) => item.location);
     if (!navigator.geolocation) {
       setRouteStatus("このブラウザは現在地取得に対応していません。");
       return;
@@ -993,7 +1046,7 @@
       if (!dayEvents.length) {
         renderRouteList([]);
         plannerMap.setView([current.lat, current.lon], 15);
-        setRouteStatus("現在地を地図に表示しました。表示日の予定に場所がないため、移動時間は未表示です。");
+        setRouteStatus("現在地を地図に表示しました。登録済み予定に場所がないため、移動時間は未表示です。");
         return;
       }
 
@@ -1048,6 +1101,13 @@
     return events
       .filter((item) => item.date === date)
       .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+  }
+
+  function getActiveEvents() {
+    return [...events].sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      return dateCompare || timeToMinutes(a.start) - timeToMinutes(b.start);
+    });
   }
 
   function getCurrentPosition() {
@@ -1401,6 +1461,10 @@
   function setRouteStatus(text) {
     if (routeStatus) {
       routeStatus.textContent = text;
+      routeStatus.classList.toggle("completed-pulse", /自動削除|終了済み|終了時刻/.test(text));
+      if (routeStatus.classList.contains("completed-pulse")) {
+        window.setTimeout(() => routeStatus.classList.remove("completed-pulse"), 1400);
+      }
     } else {
       showSummary(text);
     }
@@ -1715,8 +1779,59 @@
 
     renderTimeline(dayEvents);
     renderFreeTime(dayEvents);
-    renderScheduleMap(dayEvents);
-    showSummary(`${formatDate(date)}: ${dayEvents.length}件の予定`);
+    renderAllEvents();
+    renderScheduleMap(events);
+    showSummary(expiredNotice || `${formatDate(date)}: ${dayEvents.length}件の予定`);
+    expiredNotice = "";
+    animatedEventId = "";
+  }
+
+  function renderAllEvents() {
+    if (!allEventsList) {
+      return;
+    }
+    allEventsList.replaceChildren();
+    const sorted = [...events].sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      return dateCompare || timeToMinutes(a.start) - timeToMinutes(b.start);
+    });
+    if (!sorted.length) {
+      allEventsList.append(createListItem("登録されている予定はありません。"));
+      return;
+    }
+
+    sorted.forEach((event) => {
+      const item = document.createElement("li");
+      const title = document.createElement("strong");
+      title.textContent = event.title;
+      const meta = document.createElement("span");
+      meta.textContent = [
+        formatDate(event.date),
+        `${event.start}-${event.end}`,
+        event.location ? `場所: ${event.location}` : "場所未設定",
+      ].join(" / ");
+      const actions = document.createElement("div");
+      actions.className = "event-actions";
+      const routeButton = createSmallButton("地図", () => showEventRouteDetails(event.id));
+      routeButton.disabled = !event.location;
+      const editButton = createSmallButton("編集", () => editEvent(event.id));
+      const deleteButton = createSmallButton("削除", () => deleteEvent(event.id));
+      actions.append(routeButton, editButton, deleteButton);
+      if (event.id === animatedEventId) {
+        item.classList.add("just-added");
+      }
+      item.append(title, meta, actions);
+      allEventsList.append(item);
+    });
+  }
+
+  function createSmallButton(label, handler) {
+    const button = document.createElement("button");
+    button.className = "timeline-delete";
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", handler);
+    return button;
   }
 
   function renderTimeline(dayEvents) {
@@ -1812,6 +1927,9 @@
 
     const item = document.createElement("div");
     item.className = `timeline-item${isTravel ? " travel" : ""}`;
+    if (!isTravel && eventId && eventId === animatedEventId) {
+      item.classList.add("just-added");
+    }
 
     const strong = document.createElement("strong");
     strong.textContent = title;
@@ -1820,12 +1938,17 @@
 
     item.append(strong, span);
     if (!isTravel && eventId) {
+      const editButton = document.createElement("button");
+      editButton.className = "timeline-delete";
+      editButton.type = "button";
+      editButton.textContent = "編集";
+      editButton.addEventListener("click", () => editEvent(eventId));
       const deleteButton = document.createElement("button");
       deleteButton.className = "timeline-delete";
       deleteButton.type = "button";
       deleteButton.textContent = "削除";
       deleteButton.addEventListener("click", () => deleteEvent(eventId));
-      item.append(deleteButton);
+      item.append(editButton, deleteButton);
     }
     row.append(timeNode, item);
     return row;
@@ -1849,6 +1972,129 @@
     render();
     renderRouteList([]);
     setRouteStatus("予定を削除しました。必要なら現在地から移動時間を調べ直してください。");
+  }
+
+  function editEvent(eventId) {
+    const target = events.find((item) => item.id === eventId);
+    if (!target) {
+      return;
+    }
+
+    const title = promptClean("予定名", target.title, 48);
+    if (title === null) return;
+    const date = promptDate("日付", target.date);
+    if (date === null) return;
+    const start = promptTime("開始時刻", target.start || "10:00");
+    if (start === null) return;
+    const end = promptTime("終了時刻", target.end || minutesToTime(Math.min(timeToMinutes(start) + 60, 23 * 60 + 59)));
+    if (end === null) return;
+    if (timeToMinutes(end) <= timeToMinutes(start)) {
+      showSummary("終了時刻は開始時刻より後にしてください。編集をやり直してください。");
+      return;
+    }
+    const location = promptClean("場所", target.location || "", 48);
+    if (location === null) return;
+    const travelMinutes = promptNumber("移動時間（分）", Number(target.travelMinutes || 0), 0, 240);
+    if (travelMinutes === null) return;
+
+    const locationChanged = location !== (target.location || "");
+    const updated = {
+      ...target,
+      title,
+      date,
+      start,
+      end,
+      location,
+      travelMinutes,
+      place: locationChanged ? null : target.place,
+      placePending: Boolean(location && locationChanged),
+      updatedAt: new Date().toISOString(),
+    };
+
+    events = events.map((item) => item.id === eventId ? updated : item);
+    pruneExpiredEvents();
+    saveEvents();
+    if (notificationTimers.has(eventId)) {
+      window.clearTimeout(notificationTimers.get(eventId));
+      notificationTimers.delete(eventId);
+    }
+    const stillExists = events.some((item) => item.id === eventId);
+    if (stillExists) {
+      scheduleEventNotification(updated);
+    }
+    if (stillExists && updated.placePending) {
+      enrichEventPlaceInBackground(updated);
+    }
+    viewDateInput.value = updated.date;
+    activeRouteEventId = "";
+    renderRouteList([]);
+    render();
+    setRouteStatus("予定を編集しました。場所を変えた場合は候補を探し直します。");
+  }
+
+  function promptClean(label, currentValue, maxLength) {
+    const value = window.prompt(`${label}を入力してください。`, currentValue || "");
+    if (value === null) {
+      return null;
+    }
+    return cleanText(value, maxLength);
+  }
+
+  function promptDate(label, currentValue) {
+    const value = window.prompt(`${label}を YYYY-MM-DD で入力してください。`, currentValue || today);
+    if (value === null) {
+      return null;
+    }
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+  }
+
+  function promptTime(label, currentValue) {
+    const value = window.prompt(`${label}を HH:MM で入力してください。`, currentValue || "10:00");
+    if (value === null) {
+      return null;
+    }
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
+  }
+
+  function promptNumber(label, currentValue, min, max) {
+    const value = window.prompt(`${label}を入力してください。`, String(currentValue || 0));
+    if (value === null) {
+      return null;
+    }
+    return clampNumber(value, min, max);
+  }
+
+  function pruneExpiredEvents(options = {}) {
+    const now = new Date();
+    const before = events.length;
+    const expired = [];
+    events = events.filter((event) => {
+      const endAt = new Date(`${event.date}T${event.end || event.start || "23:59"}`);
+      if (Number.isNaN(endAt.getTime()) || endAt > now) {
+        return true;
+      }
+      expired.push(event);
+      if (notificationTimers.has(event.id)) {
+        window.clearTimeout(notificationTimers.get(event.id));
+        notificationTimers.delete(event.id);
+      }
+      return false;
+    });
+
+    if (!expired.length) {
+      return 0;
+    }
+
+    saveEvents();
+    if (!options.silent) {
+      const names = expired.slice(0, 3).map((event) => event.title).join("、");
+      const extra = expired.length > 3 ? ` ほか${expired.length - 3}件` : "";
+      expiredNotice = `終了時刻を過ぎた予定を${expired.length}件、自動削除しました: ${names}${extra}`;
+    }
+    if (before !== events.length) {
+      activeRouteEventId = "";
+    }
+    return expired.length;
   }
 
   function createEmptyState(text) {
