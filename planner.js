@@ -560,9 +560,9 @@
     if (!candidate || !candidate.location) {
       return;
     }
-    setCandidatePlaceStatus("場所の座標と混雑目安を調べています。");
+    setCandidatePlaceStatus("住所の手がかりと固有名詞から場所候補を探しています。");
     try {
-      const place = await fetchPlaceIntel(candidate.location, candidate);
+      const place = await confirmPlaceCandidate(candidate.location, candidate);
       if (detectedCandidate === candidate) {
         detectedCandidate = { ...candidate, place, placePending: false };
         showCandidate(detectedCandidate);
@@ -620,46 +620,269 @@
     };
 
     try {
+      const candidates = await fetchPlaceCandidates(location, event, 1);
+      return candidates[0] || {
+        ...fallback,
+        source: "座標候補が見つからなかったため、地名と時刻だけから作った混雑目安です。",
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function fetchPlaceCandidates(location, event, maxResults = 5) {
+    const searchPlan = buildPlaceSearchQueries(location);
+    const directCoordinates = parseCoordinatesFromText(location);
+    if (directCoordinates) {
+      return [makeCoordinatePlaceIntel(location, directCoordinates, event, searchPlan)];
+    }
+    const results = [];
+    const seen = new Set();
+
+    for (const query of searchPlan.queries) {
+      const places = await searchPlacesForQuery(query, Math.min(3, Math.max(1, maxResults)));
+
+      places.forEach((place) => {
+        const key = `${place.provider || ""}:${place.osm_type || ""}:${place.osm_id || ""}:${place.lat || ""}:${place.lon || ""}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        results.push(makePlaceIntel(location, query, place, event, searchPlan));
+      });
+
+      if (maxResults <= 1 && results.length >= maxResults) {
+        break;
+      }
+    }
+
+    return results.slice(0, maxResults);
+  }
+
+  function parseCoordinatesFromText(value) {
+    let text = String(value || "");
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      // Keep the original text when a shared URL contains malformed escapes.
+    }
+    const patterns = [
+      /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+      /[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+      /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+      /緯度[:：]?\s*(-?\d+(?:\.\d+)?)[,\s、]+経度[:：]?\s*(-?\d+(?:\.\d+)?)/,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (!match) {
+        continue;
+      }
+      const lat = Number(match[1]);
+      const lon = Number(match[2]);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        return { lat, lon };
+      }
+    }
+    return null;
+  }
+
+  function makeCoordinatePlaceIntel(location, coordinates, event, searchPlan) {
+    const displayName = `${location}（検出座標）`;
+    return {
+      query: location,
+      searchQuery: location,
+      searchParts: searchPlan,
+      displayName,
+      lat: coordinates.lat,
+      lon: coordinates.lon,
+      category: "detected coordinates",
+      mapUrl: `https://www.openstreetmap.org/?mlat=${coordinates.lat}&mlon=${coordinates.lon}#map=16/${coordinates.lat}/${coordinates.lon}`,
+      googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${coordinates.lat},${coordinates.lon}`,
+      crowd: estimateCrowd({ display_name: location, type: "" }, event),
+      source: "文章やGoogle Maps共有URLから座標を直接検出しました。",
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async function searchPlacesForQuery(query, limit) {
+    const nominatim = await fetchNominatimPlaces(query, limit);
+    if (nominatim.length) {
+      return nominatim;
+    }
+    return fetchPhotonPlaces(query, limit);
+  }
+
+  async function fetchNominatimPlaces(query, limit) {
+    try {
       const params = new URLSearchParams({
         format: "jsonv2",
-        q: location,
-        limit: "1",
+        q: query,
+        limit: String(limit),
         addressdetails: "1",
         extratags: "1",
         "accept-language": "ja",
       });
       const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
       if (!response.ok) {
-        return fallback;
+        return [];
       }
-
       const places = await response.json();
-      const place = Array.isArray(places) ? places[0] : null;
-      if (!place) {
+      return Array.isArray(places) ? places.map((place) => ({ ...place, provider: "Nominatim" })) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function fetchPhotonPlaces(query, limit) {
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        limit: String(limit),
+      });
+      const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`);
+      if (!response.ok) {
+        return [];
+      }
+      const data = await response.json();
+      const features = Array.isArray(data.features) ? data.features : [];
+      return features.map((feature) => {
+        const props = feature.properties || {};
+        const coordinates = feature.geometry && Array.isArray(feature.geometry.coordinates)
+          ? feature.geometry.coordinates
+          : [];
+        const displayName = [
+          props.name,
+          props.street,
+          props.city || props.county,
+          props.state,
+          props.country,
+        ].filter(Boolean).join(", ");
         return {
-          ...fallback,
-          source: "座標候補が見つからなかったため、地名と時刻だけから作った混雑目安です。",
+          provider: "Photon",
+          display_name: displayName || query,
+          lat: coordinates[1],
+          lon: coordinates[0],
+          category: props.osm_key || "",
+          type: props.osm_value || props.type || "",
+          osm_type: props.osm_type,
+          osm_id: props.osm_id,
         };
+      }).filter((place) => Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)));
+    } catch {
+      return [];
+    }
+  }
+
+  function makePlaceIntel(originalQuery, searchQuery, place, event, searchPlan) {
+    const osmType = String(place.osm_type || "").toLowerCase();
+    const osmId = place.osm_id;
+    const mapUrl = osmType && osmId
+      ? `https://www.openstreetmap.org/${osmType}/${osmId}`
+      : `https://www.openstreetmap.org/search?query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`;
+
+    return {
+      query: originalQuery,
+      searchQuery,
+      searchParts: searchPlan,
+      displayName: place.display_name || originalQuery,
+      lat: Number(place.lat),
+      lon: Number(place.lon),
+      category: [place.category, place.type].filter(Boolean).join(" / "),
+      mapUrl,
+      googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`,
+      crowd: estimateCrowd(place, event),
+      source: `${place.provider || "OpenStreetMap"}の場所情報と予定時刻から作った混雑目安です。リアルタイム人流ではありません。`,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async function confirmPlaceCandidate(location, event) {
+    let query = location;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const searchPlan = buildPlaceSearchQueries(query);
+      setCandidatePlaceStatus(`候補を探しています: ${searchPlan.keyword || query}`);
+      const candidates = await fetchPlaceCandidates(query, event, 5);
+
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        renderPlaceIntel(candidate, {
+          status: `候補 ${index + 1}/${candidates.length}。違う場合は確認ダイアログでキャンセルしてください。`,
+        });
+        const ok = window.confirm(`この場所で合っていますか？\n\n${candidate.displayName}\n\n検索した固有名詞: ${candidate.searchParts.keyword || query}\n住所の手がかり: ${candidate.searchParts.context || "なし"}`);
+        if (ok) {
+          return candidate;
+        }
       }
 
-      const osmType = String(place.osm_type || "").toLowerCase();
-      const osmId = place.osm_id;
-      const mapUrl = osmType && osmId ? `https://www.openstreetmap.org/${osmType}/${osmId}` : "";
-
-      return {
-        query: location,
-        displayName: place.display_name || location,
-        lat: Number(place.lat),
-        lon: Number(place.lon),
-        category: [place.category, place.type].filter(Boolean).join(" / "),
-        mapUrl,
-        crowd: estimateCrowd(place, event),
-        source: "OpenStreetMapの場所情報と予定時刻から作った混雑目安です。リアルタイム人流ではありません。",
-        fetchedAt: new Date().toISOString(),
-      };
-    } catch {
-      return fallback;
+      const nextQuery = window.prompt("別の候補を探します。場所名や施設名、住所の手がかりを入力してください。", query);
+      if (!nextQuery || !cleanText(nextQuery, 80)) {
+        break;
+      }
+      query = cleanText(nextQuery, 80);
     }
+
+    return {
+      query: location,
+      displayName: location,
+      crowd: estimateCrowd({ display_name: location, type: "" }, event),
+      source: "場所候補が確定されなかったため、座標なしで保存します。",
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  function buildPlaceSearchQueries(location) {
+    const normalized = cleanLocation(normalizeScheduleText(location))
+      .replace(/[、。]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const context = extractAddressContext(normalized);
+    const keyword = extractPlaceKeyword(normalized, context);
+    const queries = uniqueStrings([
+      keyword && context ? `${keyword} ${context}` : "",
+      keyword && context ? `${context} ${keyword}` : "",
+      keyword,
+      normalized,
+      context,
+    ]).filter((query) => query.length >= 2);
+
+    return { original: location, normalized, context, keyword, queries };
+  }
+
+  function extractAddressContext(text) {
+    const beforeNo = text.includes("の")
+      ? text.split("の").slice(0, -1).join("の")
+      : "";
+    if (/[都道府県市区町村丁目]/.test(beforeNo)) {
+      return cleanText(beforeNo, 48);
+    }
+
+    const matched = text.match(/[^、。\sの]{1,12}[都道府県](?:[^、。\sの]{1,16}[市区町村])?(?:[^、。\sの]{1,16}(?:町|丁目|村|区|市))?|[^、。\sの]{1,16}[市区町村](?:[^、。\sの]{1,16}(?:町|丁目|村|区|市))?/);
+    return cleanText(matched ? matched[0] : "", 48);
+  }
+
+  function extractPlaceKeyword(text, context) {
+    let keyword = text;
+    if (context) {
+      keyword = keyword.replace(context, "");
+    }
+    keyword = keyword
+      .replace(/.*の([^の\s、。]{2,32})$/, "$1")
+      .replace(/^(の|に|で|へ|から|まで)+/, "")
+      .replace(/(で|にて|へ|から|まで).*$/, "")
+      .trim();
+
+    if (!keyword || keyword === text) {
+      const suffix = text.match(/([^、。\s]{2,32}(?:寺|神社|駅|店|カフェ|ホール|公園|病院|学校|大学|会館|センター|ビル|ホテル|スタジオ|オフィス|空港|ターミナル))/);
+      if (suffix) {
+        keyword = suffix[1];
+      }
+    }
+
+    return cleanText(keyword, 48);
+  }
+
+  function uniqueStrings(values) {
+    return [...new Set(values.map((value) => cleanText(value, 80)).filter(Boolean))];
   }
 
   async function enrichEventPlaceInBackground(event) {
@@ -1425,7 +1648,7 @@
     candidatePlace.hidden = false;
   }
 
-  function renderPlaceIntel(place) {
+  function renderPlaceIntel(place, options = {}) {
     if (!candidatePlace) {
       return;
     }
@@ -1438,6 +1661,14 @@
     const name = document.createElement("strong");
     name.textContent = place.displayName || place.query || "場所情報";
     candidatePlace.append(name);
+
+    if (options.status) {
+      candidatePlace.append(createTextBlock(options.status));
+    }
+
+    if (place.searchParts && (place.searchParts.keyword || place.searchParts.context)) {
+      candidatePlace.append(createTextBlock(`検索: ${place.searchParts.keyword || place.query}${place.searchParts.context ? ` / 手がかり: ${place.searchParts.context}` : ""}`));
+    }
 
     if (Number.isFinite(place.lat) && Number.isFinite(place.lon)) {
       candidatePlace.append(createTextBlock(`座標目安: ${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`));
@@ -1454,7 +1685,16 @@
       link.href = place.mapUrl;
       link.target = "_blank";
       link.rel = "noreferrer";
-      link.textContent = "地図で確認";
+      link.textContent = "OpenStreetMapで確認";
+      candidatePlace.append(link);
+    }
+
+    if (place.googleMapUrl) {
+      const link = document.createElement("a");
+      link.href = place.googleMapUrl;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Google Mapsで確認";
       candidatePlace.append(link);
     }
 
