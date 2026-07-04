@@ -13,6 +13,11 @@
   const clearButton = document.querySelector("#clear-events-button");
   const detectForm = document.querySelector("#detect-form");
   const detectText = document.querySelector("#detect-text");
+  const ocrImageInput = document.querySelector("#ocr-image");
+  const ocrPreview = document.querySelector("#ocr-preview");
+  const ocrPreviewImage = document.querySelector("#ocr-preview-image");
+  const ocrStatus = document.querySelector("#ocr-status");
+  const ocrProgress = document.querySelector("#ocr-progress");
   const candidateBox = document.querySelector("#candidate-box");
   const candidateTitle = document.querySelector("#candidate-title");
   const candidateMeta = document.querySelector("#candidate-meta");
@@ -69,9 +74,12 @@
 
   detectForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    detectedCandidate = detectSchedule(detectText.value);
-    showCandidate(detectedCandidate);
+    makeCandidateFromText();
   });
+
+  if (ocrImageInput) {
+    ocrImageInput.addEventListener("change", handleImageSelection);
+  }
 
   candidateAddButton.addEventListener("click", () => {
     if (!detectedCandidate) {
@@ -139,6 +147,95 @@
       location,
       travelMinutes: location ? 30 : 0,
     };
+  }
+
+  async function handleImageSelection() {
+    const file = ocrImageInput.files && ocrImageInput.files[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setOcrStatus("画像ファイルを選択してください。", 0);
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setOcrStatus("画像は8MB以内にしてください。", 0);
+      return;
+    }
+
+    if (!window.Tesseract) {
+      setOcrStatus("OCRライブラリを読み込めませんでした。通信状態を確認してください。", 0);
+      return;
+    }
+
+    showImagePreview(file);
+    setOcrStatus("画像を読み取っています。初回は少し時間がかかります。", 0.02);
+
+    try {
+      const result = await window.Tesseract.recognize(file, "jpn+eng", {
+        logger(message) {
+          if (message.status === "recognizing text") {
+            setOcrStatus(`文字を読み取り中 ${Math.round(message.progress * 100)}%`, message.progress);
+          } else if (message.status) {
+            setOcrStatus("OCRを準備しています。", Math.min(Number(message.progress || 0), 0.2));
+          }
+        },
+      });
+
+      const text = cleanOcrText(result.data && result.data.text);
+      if (!text) {
+        setOcrStatus("文字を検出できませんでした。明るく、文字が大きい画像で試してください。", 0);
+        return;
+      }
+
+      detectText.value = text;
+      setOcrStatus("読み取りました。候補を作成しました。", 1);
+      makeCandidateFromText();
+    } catch (error) {
+      setOcrStatus(`読み取れませんでした: ${getErrorText(error)}`, 0);
+    }
+  }
+
+  function makeCandidateFromText() {
+    detectedCandidate = detectSchedule(detectText.value);
+    showCandidate(detectedCandidate);
+  }
+
+  function showImagePreview(file) {
+    const url = URL.createObjectURL(file);
+    ocrPreviewImage.onload = () => URL.revokeObjectURL(url);
+    ocrPreviewImage.src = url;
+    ocrPreview.hidden = false;
+  }
+
+  function setOcrStatus(message, progress) {
+    if (!ocrPreview || !ocrStatus || !ocrProgress) {
+      showSummary(message);
+      return;
+    }
+    ocrPreview.hidden = false;
+    ocrStatus.textContent = message;
+    ocrProgress.value = Math.max(0, Math.min(1, Number(progress || 0)));
+  }
+
+  function cleanOcrText(value) {
+    return String(value || "")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .slice(0, 280);
+  }
+
+  function getErrorText(error) {
+    if (!error) {
+      return "原因不明のエラーです。";
+    }
+    return error.message || String(error);
   }
 
   function detectDate(text, base) {

@@ -82,7 +82,7 @@
       <div class="section-head">
         <p class="eyebrow">APP</p>
         <h2 id="planner-title">予定ワークスペース</h2>
-        <p class="board-intro">予定を登録し、メッセージ文から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
+        <p class="board-intro">予定を登録し、メッセージ文や画像から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
       </div>
 
       <div class="planner-layout">
@@ -126,10 +126,21 @@
 
         <div class="planner-panel">
           <div class="planner-panel-head">
-            <h3>文章から候補を検出</h3>
+            <h3>文章・画像から候補を検出</h3>
             <span class="planner-hint">例: 明日18:30 渋谷で打ち合わせ</span>
           </div>
           <form class="detect-form" id="detect-form">
+            <label class="image-picker">
+              <span>このデバイスの画像から読み取る</span>
+              <input id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+            </label>
+            <div class="ocr-preview" id="ocr-preview" hidden>
+              <img id="ocr-preview-image" alt="選択した画像のプレビュー">
+              <div>
+                <strong id="ocr-status">画像を読み取っています。</strong>
+                <progress id="ocr-progress" value="0" max="1"></progress>
+              </div>
+            </div>
             <label>
               <span>メッセージ本文</span>
               <textarea id="detect-text" rows="5" maxlength="280" placeholder="予定が書かれた文章を貼り付けてください"></textarea>
@@ -142,7 +153,7 @@
             <span id="candidate-meta"></span>
             <button class="button primary" type="button" id="candidate-add-button">この候補を登録</button>
           </div>
-          <p class="planner-note">画像やSNS連携は外部APIが必要です。今は画像内の文字やSNS文面を貼り付けると候補化できます。</p>
+          <p class="planner-note">画像内の文字は、使用中のデバイスから選んだ画像だけをブラウザ内OCRで読み取ります。SNS連携は外部APIが必要なため、今は文面を貼り付けて候補化できます。</p>
         </div>
       </div>
 
@@ -224,7 +235,7 @@
         <article class="step">
           <span class="num">1</span>
           <h3>予定を検出</h3>
-          <p>文章から日時、場所、内容の候補を作ります。</p>
+          <p>文章や画像内の文字から日時、場所、内容の候補を作ります。</p>
         </article>
         <article class="step">
           <span class="num">2</span>
@@ -309,6 +320,7 @@
   <footer>
     スーパー・スケジュールくん | 予定管理を、もっと軽く。
   </footer>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="planner.js"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
