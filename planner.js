@@ -44,6 +44,9 @@
   const routeStatus = document.querySelector("#route-status");
   const mapContainer = document.querySelector("#planner-map");
   const routeList = document.querySelector("#route-list");
+  const scheduleTable = document.querySelector("#schedule-table");
+  const scheduleTableStatus = document.querySelector("#schedule-table-status");
+  const scheduleFloating = document.querySelector("#schedule-floating");
   const allEventsList = document.querySelector("#all-events-list");
   const timelineBoard = document.querySelector("#timeline-board");
   const freeTimeList = document.querySelector("#free-time-list");
@@ -338,6 +341,8 @@
         render();
         renderRouteList([]);
         setRouteStatus(notice);
+      } else {
+        renderScheduleTable(getSelectedDayEvents(), viewDateInput.value || today);
       }
     }, 60 * 1000);
   }
@@ -1817,6 +1822,7 @@
 
     renderTimeline(dayEvents);
     renderFreeTime(dayEvents);
+    renderScheduleTable(dayEvents, date);
     renderAllEvents();
     renderScheduleMap(events);
     showSummary(expiredNotice || `${formatDate(date)}: ${dayEvents.length}件の予定`);
@@ -1870,6 +1876,112 @@
     button.textContent = label;
     button.addEventListener("click", handler);
     return button;
+  }
+
+  function renderScheduleTable(dayEvents, date) {
+    if (!scheduleTable || !scheduleFloating) {
+      return;
+    }
+    scheduleTable.replaceChildren();
+    scheduleFloating.replaceChildren();
+
+    const timedEvents = dayEvents.filter((event) => hasExactTime(event));
+    const floatingEvents = dayEvents.filter((event) => !hasExactTime(event));
+    if (scheduleTableStatus) {
+      scheduleTableStatus.textContent = `${timedEvents.length}件を時間帯に表示 / 時間不明 ${floatingEvents.length}件`;
+    }
+
+    const rangeStart = getScheduleRangeStart(timedEvents, date);
+    const rangeEnd = getScheduleRangeEnd(timedEvents, date, rangeStart);
+    const totalMinutes = rangeEnd - rangeStart;
+
+    const grid = document.createElement("div");
+    grid.className = "schedule-grid";
+    grid.style.setProperty("--schedule-minutes", String(totalMinutes));
+
+    for (let minutes = rangeStart; minutes <= rangeEnd; minutes += 60) {
+      const row = document.createElement("div");
+      row.className = "schedule-hour-row";
+      row.style.top = `${((minutes - rangeStart) / totalMinutes) * 100}%`;
+      const label = document.createElement("span");
+      label.textContent = minutesToTime(minutes);
+      row.append(label);
+      grid.append(row);
+    }
+
+    timedEvents.forEach((event) => {
+      const start = clampNumber(timeToMinutes(event.start), rangeStart, rangeEnd - 5);
+      const end = Math.max(start + 15, Math.min(timeToMinutes(event.end), rangeEnd));
+      const block = document.createElement("button");
+      block.type = "button";
+      block.className = "schedule-event";
+      if (event.id === animatedEventId) {
+        block.classList.add("just-added");
+      }
+      block.style.top = `${((start - rangeStart) / totalMinutes) * 100}%`;
+      block.style.height = `${Math.max(5, ((end - start) / totalMinutes) * 100)}%`;
+      block.addEventListener("click", () => editEvent(event.id));
+      const title = document.createElement("strong");
+      title.textContent = event.title;
+      const meta = document.createElement("span");
+      meta.textContent = `${event.start}-${event.end}${event.location ? ` / ${event.location}` : ""}`;
+      block.append(title, meta);
+      grid.append(block);
+    });
+
+    if (date === toDateInputValue(new Date())) {
+      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+      if (nowMinutes >= rangeStart && nowMinutes <= rangeEnd) {
+        const marker = document.createElement("div");
+        marker.className = "schedule-now-marker";
+        marker.style.top = `${((nowMinutes - rangeStart) / totalMinutes) * 100}%`;
+        marker.innerHTML = "<span>今ここ！</span>";
+        grid.append(marker);
+      }
+    }
+
+    if (!timedEvents.length) {
+      const empty = document.createElement("div");
+      empty.className = "schedule-empty";
+      empty.textContent = "時間が分かる予定はありません。";
+      grid.append(empty);
+    }
+
+    scheduleTable.append(grid);
+
+    if (floatingEvents.length) {
+      const title = document.createElement("strong");
+      title.textContent = "時間不明の予定";
+      const list = document.createElement("ul");
+      floatingEvents.forEach((event) => {
+        const item = document.createElement("li");
+        item.textContent = `${event.title}${event.location ? ` / 場所: ${event.location}` : ""}`;
+        item.addEventListener("click", () => editEvent(event.id));
+        list.append(item);
+      });
+      scheduleFloating.append(title, list);
+    }
+  }
+
+  function hasExactTime(event) {
+    return Boolean(event.start && event.end && !event.inferredTime && timeToMinutes(event.end) > timeToMinutes(event.start));
+  }
+
+  function getScheduleRangeStart(timedEvents, date) {
+    const starts = timedEvents.map((event) => timeToMinutes(event.start)).filter(Number.isFinite);
+    if (date === toDateInputValue(new Date())) {
+      starts.push(new Date().getHours() * 60 + new Date().getMinutes());
+    }
+    return Math.max(0, Math.min(DAY_START, starts.length ? Math.floor(Math.min(...starts) / 60) * 60 : DAY_START));
+  }
+
+  function getScheduleRangeEnd(timedEvents, date, rangeStart) {
+    const ends = timedEvents.map((event) => timeToMinutes(event.end)).filter(Number.isFinite);
+    if (date === toDateInputValue(new Date())) {
+      ends.push(new Date().getHours() * 60 + new Date().getMinutes());
+    }
+    const baseEnd = ends.length ? Math.ceil(Math.max(...ends) / 60) * 60 : DAY_END;
+    return Math.min(24 * 60, Math.max(DAY_END, baseEnd, rangeStart + 60));
   }
 
   function renderTimeline(dayEvents) {
