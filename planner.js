@@ -1247,27 +1247,27 @@
       currentMarker.remove();
     }
     const circle = window.L.circleMarker([current.lat, current.lon], {
-      radius: 10,
-      color: "#7c3aed",
-      weight: 3,
-      fillColor: "#ffd34d",
-      fillOpacity: 0.9,
+      radius: 7,
+      color: "#1f5f8b",
+      weight: 2,
+      fillColor: "#2f80c2",
+      fillOpacity: 0.55,
     });
     const accuracyCircle = Number.isFinite(current.accuracy)
       ? window.L.circle([current.lat, current.lon], {
           radius: Math.min(Math.max(current.accuracy, 20), 1000),
-          color: "#7c3aed",
+          color: "#1f5f8b",
           weight: 1,
-          fillColor: "#ffd34d",
-          fillOpacity: 0.13,
+          fillColor: "#5aa9e6",
+          fillOpacity: 0.12,
         })
       : null;
     const marker = window.L.marker([current.lat, current.lon], {
       icon: window.L.divIcon({
         className: "current-position-pin",
         html: "<span></span>",
-        iconSize: [26, 26],
-        iconAnchor: [13, 13],
+        iconSize: [30, 42],
+        iconAnchor: [15, 39],
       }),
     });
     currentMarker = window.L.layerGroup([accuracyCircle, circle, marker].filter(Boolean))

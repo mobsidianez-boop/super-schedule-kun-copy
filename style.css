@@ -917,19 +917,23 @@ h3 {
 }
 
 .current-position-pin {
-  border-radius: 999px;
-  background: #ffd34d;
-  border: 3px solid #7c3aed;
-  box-shadow: 0 0 0 5px rgba(255, 211, 77, 0.26), 0 10px 22px rgba(124, 58, 237, 0.28);
+  width: 30px;
+  height: 30px;
+  border-radius: 50% 50% 50% 6px;
+  background: #2f80c2;
+  border: 3px solid #ffffff;
+  box-shadow: 0 8px 18px rgba(31, 95, 139, 0.28);
+  transform: rotate(-45deg);
 }
 
 .current-position-pin span {
   display: block;
-  width: 8px;
-  height: 8px;
-  margin: 6px;
+  width: 10px;
+  height: 10px;
+  margin: 7px;
   border-radius: 999px;
-  background: #ff4f9a;
+  background: #d9efff;
+  transform: rotate(45deg);
 }
 
 .route-list {
