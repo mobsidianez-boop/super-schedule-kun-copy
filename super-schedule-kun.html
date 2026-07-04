@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=character-walk-1">
+  <link rel="stylesheet" href="style.css?v=phone-match-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -44,40 +44,39 @@
 
       <div class="phone" aria-label="アプリ画面イメージ">
         <div class="phone-head">
-          <span>Today</span>
-          <span class="status">予定候補 3件</span>
+          <span>超スケジュールくん</span>
+          <span class="status">APP</span>
         </div>
-          <div class="screen">
-            <div class="mini-card">
-              <span class="source">LINEから検出</span>
-              <strong>18:30 渋谷で打ち合わせ</strong>
-              <span class="register">登録</span>
-            </div>
-          <div class="timeline">
-            <div class="event">
-              <span class="time">09:00</span>
-              <span class="event-text">講義</span>
-            </div>
-            <div class="event">
-              <span class="time">12:10</span>
-              <span class="event-text free">空き時間 1時間20分</span>
-            </div>
-            <div class="event">
-              <span class="time">13:30</span>
-              <span class="event-text">アルバイト</span>
-            </div>
-            <div class="event">
-              <span class="time">17:45</span>
-              <span class="event-text move">移動メモ: 36分</span>
+        <div class="screen">
+          <div class="mini-card phone-auth-card">
+            <span class="source">ログインして使用</span>
+            <strong>メール登録 / 合言葉</strong>
+            <span class="register">入室</span>
+          </div>
+          <div class="phone-form-card">
+            <span>予定名</span>
+            <strong>いのちのたび博物館に行く</strong>
+            <div class="phone-fields">
+              <em>日付</em>
+              <em>時間</em>
+              <em>場所</em>
             </div>
           </div>
-          <div class="route-card">
-            <div><span>移動メモ</span><strong>36分</strong></div>
-            <div><span>出発目安</span><strong>17:44</strong></div>
+          <div class="phone-map-card">
+            <span class="phone-current-dot"></span>
+            <span class="phone-event-dot"></span>
+            <span class="phone-route-line"></span>
+          </div>
+          <div class="phone-legend">
+            <span><i class="legend-current"></i>現在地</span>
+            <span><i class="legend-event"></i>予定場所</span>
+          </div>
+          <div class="phone-schedule-card">
+            <span>10:00</span>
+            <strong>予定ブロック</strong>
           </div>
         </div>
-      </div>
-    </section>
+      </div>    </section>
 
     <section class="section planner" id="planner" aria-labelledby="planner-title">
       <div class="section-head">
@@ -384,7 +383,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=character-walk-1"></script>
+  <script src="planner.js?v=phone-match-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

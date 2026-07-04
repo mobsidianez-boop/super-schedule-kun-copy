@@ -320,6 +320,11 @@ h3 {
   padding: 14px;
 }
 
+.phone-auth-card {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
 .source {
   color: var(--muted);
   font-size: 14px;
@@ -330,6 +335,156 @@ h3 {
   justify-self: start;
   padding: 4px 10px;
   background: var(--teal);
+}
+
+.phone-form-card,
+.phone-map-card,
+.phone-legend,
+.phone-schedule-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.phone-form-card {
+  display: grid;
+  gap: 6px;
+}
+
+.phone-form-card span,
+.phone-schedule-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.phone-form-card strong,
+.phone-schedule-card strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.phone-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.phone-fields em {
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: var(--mint);
+  color: var(--teal);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: center;
+}
+
+.phone-map-card {
+  position: relative;
+  height: 92px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(112, 71, 235, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(112, 71, 235, 0.08) 1px, transparent 1px),
+    var(--sky);
+  background-size: 28px 28px;
+}
+
+.phone-current-dot,
+.phone-event-dot,
+.phone-route-line {
+  position: absolute;
+  display: block;
+}
+
+.phone-current-dot {
+  left: 28px;
+  top: 38px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #ffffff;
+  border-radius: 999px 999px 999px 8px;
+  background: #8b6cff;
+  box-shadow: 0 6px 14px rgba(91, 65, 190, 0.28);
+  transform: rotate(-45deg);
+  animation: currentPinWalk 980ms ease-in-out infinite;
+}
+
+.phone-current-dot::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  width: 2px;
+  height: 3px;
+  border-radius: 999px;
+  background: #201b3f;
+  box-shadow: 6px 0 0 #201b3f;
+  transform: rotate(45deg);
+}
+
+.phone-event-dot {
+  right: 32px;
+  top: 24px;
+  width: 18px;
+  height: 24px;
+  border-radius: 999px 999px 999px 3px;
+  background: #2f80c2;
+  transform: rotate(-45deg);
+}
+
+.phone-event-dot::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.phone-route-line {
+  left: 52px;
+  right: 52px;
+  top: 52px;
+  height: 4px;
+  border-radius: 999px;
+  background: #7047eb;
+  transform: rotate(-12deg);
+}
+
+.phone-legend {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.phone-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phone-legend .legend-current,
+.phone-legend .legend-event {
+  transform: scale(0.72) rotate(-45deg);
+  transform-origin: center;
+}
+
+.phone-schedule-card {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 10px;
+  align-items: center;
+  border-color: rgba(255, 92, 138, 0.36);
+  background: linear-gradient(135deg, rgba(255, 79, 154, 0.16), rgba(112, 71, 235, 0.16));
 }
 
 .timeline {
