@@ -180,12 +180,12 @@
     lockPlanner();
 
     if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
-      unlockPlanner("合言葉で開いています。");
+      unlockPlanner("開発者テストモードで開いています。");
       return;
     }
 
     if (!plannerSupabase) {
-      setPlannerAuthStatus("ログイン機能を読み込めませんでした。合言葉 NoCodeTest で開けます。", "warning");
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "warning");
       return;
     }
 
@@ -205,7 +205,7 @@
 
   async function loginPlanner() {
     if (!plannerSupabase) {
-      setPlannerAuthStatus("ログイン機能を読み込めませんでした。合言葉 NoCodeTest で開けます。", "error");
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "error");
       return;
     }
 
@@ -229,7 +229,7 @@
 
   async function signupPlanner() {
     if (!plannerSupabase) {
-      setPlannerAuthStatus("ログイン機能を読み込めませんでした。合言葉 NoCodeTest で開けます。", "error");
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "error");
       return;
     }
 
@@ -264,11 +264,11 @@
 
   function unlockWithCode() {
     if (plannerAccessCode.value.trim() !== ACCESS_CODE) {
-      setPlannerAuthStatus("合言葉が違います。", "error");
+      setPlannerAuthStatus("テストコードが違います。", "error");
       return;
     }
     localStorage.setItem(ACCESS_KEY, ACCESS_CODE);
-    unlockPlanner("合言葉で開いています。");
+    unlockPlanner("開発者テストモードで開いています。");
   }
 
   function lockPlanner() {
@@ -279,7 +279,7 @@
     if (plannerApp) {
       plannerApp.hidden = true;
     }
-    setPlannerAuthStatus("予定アプリはログイン後に使えます。合言葉 NoCodeTest でも開けます。", "warning");
+    setPlannerAuthStatus("予定アプリはログイン後に使えます。", "warning");
   }
 
   function unlockPlanner(message) {
@@ -300,7 +300,7 @@
     if (plannerUnlocked) {
       return true;
     }
-    setPlannerAuthStatus("先にログインするか、合言葉 NoCodeTest を入力してください。", "warning");
+    setPlannerAuthStatus("先にログインしてください。", "warning");
     if (plannerGate) {
       plannerGate.scrollIntoView({ behavior: "smooth", block: "center" });
     }
