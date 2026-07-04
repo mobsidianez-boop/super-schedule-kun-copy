@@ -952,22 +952,35 @@ h3 {
 }
 
 .current-position-pin {
-  width: 30px;
-  height: 30px;
-  border-radius: 50% 50% 50% 6px;
-  background: #2f80c2;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px 999px 999px 12px;
+  background: #8b6cff;
   border: 3px solid #ffffff;
-  box-shadow: 0 8px 18px rgba(31, 95, 139, 0.28);
+  box-shadow: 0 8px 18px rgba(91, 65, 190, 0.3);
   transform: rotate(-45deg);
+}
+
+.current-position-pin::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 11px;
+  width: 4px;
+  height: 6px;
+  border-radius: 999px;
+  background: #201b3f;
+  box-shadow: 10px 0 0 #201b3f;
+  transform: rotate(45deg);
 }
 
 .current-position-pin span {
   display: block;
-  width: 10px;
-  height: 10px;
-  margin: 7px;
+  width: 9px;
+  height: 9px;
+  margin: 5px 0 0 17px;
   border-radius: 999px;
-  background: #d9efff;
+  background: rgba(255, 255, 255, 0.42);
   transform: rotate(45deg);
 }
 
