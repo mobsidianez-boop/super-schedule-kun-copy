@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=oauth-providers-1">
+  <link rel="stylesheet" href="style.css?v=login-page-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -15,7 +15,7 @@
     </a>
     <nav class="nav" aria-label="ページナビゲーション">
       <a class="active" href="super-schedule-kun.html">ホーム</a>
-      <a href="app.html">アプリを使う</a>
+      <a href="login.html">アプリを使う</a>
       <a href="features.html">機能</a>
       <a href="use-cases.html">活用シーン</a>
     </nav>
@@ -37,7 +37,7 @@
           <span>移動時間</span>
         </div>
         <div class="actions">
-          <a class="button primary" href="app.html">アプリを使う</a>
+          <a class="button primary" href="login.html">アプリを使う</a>
           <a class="button" href="use-cases.html">使い方を見る</a>
         </div>
       </div>
@@ -50,7 +50,7 @@
         <div class="screen">
           <div class="mini-card phone-auth-card">
             <span class="source">ログインして使用</span>
-            <strong>メール登録 / 合言葉</strong>
+            <strong>アカウントで続ける / おためし</strong>
             <span class="register">入室</span>
           </div>
           <div class="phone-form-card">
@@ -105,20 +105,15 @@
             <button class="button" type="button" id="planner-signup-button">新規登録</button>
             <button class="button" type="button" id="planner-resend-button">確認メールを再送</button>
           </div>
-          <div class="oauth-actions" aria-label="外部アカウントでログイン">
-            <button class="button" type="button" data-planner-oauth="google">Googleで続ける</button>
-            <button class="button" type="button" data-planner-oauth="twitter">Xで続ける</button>
-            <button class="button" type="button" data-planner-oauth="azure">Microsoftで続ける</button>
-            <button class="button" type="button" data-planner-oauth="facebook">Instagram/Metaで続ける</button>
+          <div class="oauth-actions oauth-actions-branded" aria-label="外部アカウントでログイン">
+            <button class="button" type="button" data-planner-oauth="google"><span class="oauth-logo oauth-google" aria-hidden="true">G</span><span>Googleで続ける</span></button>
+            <button class="button" type="button" data-planner-oauth="twitter"><span class="oauth-logo oauth-x" aria-hidden="true">X</span><span>Xで続ける</span></button>
+            <button class="button" type="button" data-planner-oauth="azure"><span class="oauth-logo oauth-microsoft" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>Microsoftで続ける</span></button>
+            <button class="button" type="button" data-planner-oauth="facebook"><span class="oauth-logo oauth-instagram" aria-hidden="true"></span><span>Instagram/Metaで続ける</span></button>
           </div>
         </form>
         <div class="planner-code-row">
-          <label>
-            <span>開発者テストコード</span>
-            <input id="planner-access-code" type="password" autocomplete="off" placeholder="テストコード">
-          </label>
-          <button class="button" type="button" id="planner-code-button">テストコードで開く</button>
-          <button class="button primary" type="button" id="planner-demo-button">コードなしでおためし</button>
+          <button class="button primary" type="button" id="planner-demo-button">おためしで使う</button>
         </div>
         <details class="planner-connection-settings">
           <summary>Supabase接続設定</summary>
@@ -404,7 +399,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=oauth-providers-1"></script>
+  <script src="planner.js?v=login-page-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

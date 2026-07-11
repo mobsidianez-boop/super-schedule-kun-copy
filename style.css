@@ -44,6 +44,13 @@ body {
   animation: pageArrive 540ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+.login-mode {
+  min-height: 100vh;
+  background:
+    linear-gradient(145deg, rgba(255, 240, 246, 0.8), rgba(238, 244, 255, 0.82) 45%, rgba(240, 234, 255, 0.86)),
+    var(--paper);
+}
+
 [hidden] {
   display: none !important;
 }
@@ -1858,6 +1865,109 @@ h3 {
   width: 100%;
 }
 
+.oauth-actions-branded .button {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.oauth-logo {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.oauth-google {
+  color: #4285f4;
+  background: #ffffff;
+  border: 1px solid #e6e6e6;
+  box-shadow: inset 0 -3px 0 #34a853, inset 3px 0 0 #fbbc05, inset -3px 0 0 #ea4335;
+}
+
+.oauth-x {
+  color: #ffffff;
+  background: #101010;
+}
+
+.oauth-microsoft {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  padding: 3px;
+  background: #ffffff;
+  border: 1px solid #e6e6e6;
+}
+
+.oauth-microsoft i {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.oauth-microsoft i:nth-child(1) { background: #f25022; }
+.oauth-microsoft i:nth-child(2) { background: #7fba00; }
+.oauth-microsoft i:nth-child(3) { background: #00a4ef; }
+.oauth-microsoft i:nth-child(4) { background: #ffb900; }
+
+.oauth-instagram {
+  background:
+    radial-gradient(circle at 70% 28%, #ffffff 0 8%, transparent 9%),
+    radial-gradient(circle, transparent 0 34%, #ffffff 35% 46%, transparent 47%),
+    linear-gradient(135deg, #405de6, #833ab4 35%, #e1306c 62%, #fd1d1d 78%, #fcb045);
+}
+
+.login-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(320px, 0.9fr);
+  gap: 34px;
+  align-items: center;
+  width: min(1180px, 88vw);
+  min-height: calc(100vh - 72px);
+  margin: 0 auto;
+  padding: 54px 0 72px;
+}
+
+.login-hero {
+  animation: pageArrive 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.login-panel {
+  margin: 0;
+  animation: panelFloat 580ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.login-panel h2 {
+  font-size: clamp(26px, 3vw, 34px);
+}
+
+.login-auth-form {
+  grid-template-columns: 1fr;
+}
+
+.demo-entry {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255, 92, 138, 0.24);
+  border-radius: 8px;
+  background: var(--warm-soft);
+}
+
+.demo-entry .button {
+  width: 100%;
+}
+
+.demo-entry p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
 .auth-session {
   display: flex;
   align-items: center;
@@ -2064,6 +2174,11 @@ footer {
 }
 
 @media (max-width: 1120px) {
+  .login-shell {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
   .hero {
     grid-template-columns: 1fr;
   }
@@ -2090,6 +2205,10 @@ footer {
   .split {
     grid-template-columns: 1fr;
   }
+
+  .login-auth-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2106,6 +2225,15 @@ footer {
   .nav {
     width: 100%;
     overflow-x: auto;
+  }
+
+  .login-shell {
+    width: min(92vw, 560px);
+    padding-top: 32px;
+  }
+
+  .oauth-actions {
+    grid-template-columns: 1fr;
   }
 
   .hero,
