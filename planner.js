@@ -19,6 +19,7 @@
   const plannerResendButton = document.querySelector("#planner-resend-button");
   const plannerAccessCode = document.querySelector("#planner-access-code");
   const plannerCodeButton = document.querySelector("#planner-code-button");
+  const plannerDemoButton = document.querySelector("#planner-demo-button");
   const plannerLogoutButton = document.querySelector("#planner-logout-button");
   const plannerAuthStatus = document.querySelector("#planner-auth-status");
   const form = document.querySelector("#event-form");
@@ -93,7 +94,7 @@
     if (!ensurePlannerAccess()) {
       return;
     }
-    const permissionPromise = prepareNotificationPermission();
+    const permissionPromise = plannerStorageMode === "test" ? Promise.resolve("test") : prepareNotificationPermission();
     const nextEvent = await readFormEvent();
     if (!nextEvent) {
       return;
@@ -178,7 +179,7 @@
     if (!detectedCandidate) {
       return;
     }
-    const permissionPromise = prepareNotificationPermission();
+    const permissionPromise = plannerStorageMode === "test" ? Promise.resolve("test") : prepareNotificationPermission();
     const nextEvent = { ...detectedCandidate, id: createId(), createdAt: new Date().toISOString() };
     events = [nextEvent, ...events];
     animatedEventId = nextEvent.id;
@@ -214,9 +215,19 @@
     plannerCodeButton.addEventListener("click", unlockWithCode);
   }
 
+  if (plannerDemoButton) {
+    plannerDemoButton.addEventListener("click", unlockDemoMode);
+  }
+
   if (plannerLogoutButton) {
     plannerLogoutButton.addEventListener("click", logoutPlanner);
   }
+
+  window.addEventListener("pagehide", () => {
+    if (plannerStorageMode === "test") {
+      clearTestSession();
+    }
+  });
 
   function attachActionAnimations() {
     document.addEventListener("click", (event) => {
@@ -248,11 +259,11 @@
     lockPlanner();
 
     if (!plannerSupabase) {
-      if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
+      if (sessionStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
         unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
         return;
       }
-      setPlannerAuthStatus("ログイン機能を読み込めませんでした。開発者テストコードでも開けます。", "warning");
+      setPlannerAuthStatus("ログイン機能を読み込めませんでした。コードなしのおためしでも開けます。", "warning");
       return;
     }
 
@@ -265,7 +276,7 @@
           lockPlanner();
           setPlannerAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
         }
-      } else if (localStorage.getItem(ACCESS_KEY) !== ACCESS_CODE) {
+      } else if (sessionStorage.getItem(ACCESS_KEY) !== ACCESS_CODE) {
         lockPlanner();
       }
     });
@@ -281,7 +292,7 @@
       return;
     }
 
-    if (localStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
+    if (sessionStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
       unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
     }
   }
@@ -452,19 +463,44 @@
       return;
     }
     setPlannerAuthStatus("確認メールを再送しています。");
-    const { error } = await plannerSupabase.auth.resend({
-      type: "signup",
-      email,
-      options: {
-        emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
-      },
-    });
+    let error = null;
+    try {
+      ({ error } = await plannerSupabase.auth.resend({
+        type: "signup",
+        email,
+        options: {
+          emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
+        },
+      }));
+    } catch (caughtError) {
+      error = caughtError;
+    }
+    if (isFetchFailure(error)) {
+      error = await resendPlannerConfirmationViaRest(email);
+    }
     if (error) {
       setPlannerAuthStatus(`確認メールを再送できませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
       return;
     }
     setPlannerAuthStatus("確認メールを再送しました。メール内のリンクを開いてからログインしてください。", "success");
+  }
+
+  async function resendPlannerConfirmationViaRest(email) {
+    try {
+      const response = await authFetch("/resend", {
+        body: {
+          type: "signup",
+          email,
+          options: {
+            email_redirect_to: CONFIG.authRedirectUrl || window.location.href,
+          },
+        },
+      });
+      return response.ok ? null : await readAuthError(response);
+    } catch (error) {
+      return error;
+    }
   }
 
   function isEmailVerified(user) {
@@ -497,8 +533,23 @@
       animateGate("gate-shake");
       return;
     }
-    localStorage.setItem(ACCESS_KEY, ACCESS_CODE);
+    sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
     unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
+  }
+
+  function unlockDemoMode() {
+    sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
+    clearTestSession({ keepAccess: true });
+    unlockPlanner("おためしモードで開いています。通知は使わず、閉じると予定は消えます。", { mode: "test" });
+  }
+
+  function clearTestSession(options = {}) {
+    sessionStorage.removeItem(`${STORAGE_KEY}:test`);
+    localStorage.removeItem(`${STORAGE_KEY}:test`);
+    if (!options.keepAccess) {
+      sessionStorage.removeItem(ACCESS_KEY);
+      localStorage.removeItem(ACCESS_KEY);
+    }
   }
 
   function lockPlanner() {
@@ -570,10 +621,14 @@
     if (plannerSupabase) {
       await plannerSupabase.auth.signOut();
     }
-    localStorage.removeItem(ACCESS_KEY);
     if (shouldClearTestEvents && testEventsKey) {
-      localStorage.removeItem(testEventsKey);
       events = [];
+    }
+    if (shouldClearTestEvents) {
+      clearTestSession();
+    } else {
+      sessionStorage.removeItem(ACCESS_KEY);
+      localStorage.removeItem(ACCESS_KEY);
     }
     stopPlannerRuntime();
     lockPlanner();
@@ -2704,7 +2759,8 @@
 
   function loadEvents(key = getLocalEventsKey()) {
     try {
-      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+      const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
+      const parsed = JSON.parse(storage.getItem(key) || "[]");
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
@@ -2712,7 +2768,8 @@
   }
 
   function saveEvents() {
-    localStorage.setItem(getLocalEventsKey(), JSON.stringify(events));
+    const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
+    storage.setItem(getLocalEventsKey(), JSON.stringify(events));
     if (plannerStorageMode === "user" && plannerUserId) {
       scheduleCloudSync();
     }
@@ -2830,6 +2887,10 @@
   }
 
   function scheduleUpcomingNotifications() {
+    if (plannerStorageMode === "test") {
+      clearNotificationTimers();
+      return;
+    }
     clearNotificationTimers();
     events.forEach(scheduleEventNotification);
   }
@@ -2845,6 +2906,9 @@
   }
 
   async function scheduleEventNotification(event, permissionPromise) {
+    if (plannerStorageMode === "test") {
+      return;
+    }
     if (!event || !event.date || !event.start || !event.place) {
       return;
     }
