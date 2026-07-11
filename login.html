@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん ログイン</title>
-  <link rel="stylesheet" href="style.css?v=hide-disabled-oauth-1">
+  <link rel="stylesheet" href="style.css?v=passwordless-signup-1">
 </head>
 <body class="login-mode">
   <header class="header">
@@ -30,7 +30,7 @@
     <section class="auth-panel login-panel" aria-label="ログイン">
       <div class="planner-panel-head">
         <h2>超スケジュールくんを使う</h2>
-        <span class="planner-hint">初めての人は新規登録から始められます</span>
+        <span class="planner-hint">新規登録はメールアドレスだけで始められます</span>
       </div>
 
       <form class="auth-form login-auth-form" id="login-auth-form">
@@ -39,13 +39,13 @@
           <input id="login-auth-email" type="email" autocomplete="email" placeholder="you@example.com">
         </label>
         <label>
-          <span>パスワード</span>
-          <input id="login-auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上">
+          <span>パスワード（ログイン時）</span>
+          <input id="login-auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="登録後に設定">
         </label>
         <div class="auth-actions">
           <button class="button primary" type="submit">ログイン</button>
-          <button class="button" type="button" id="login-signup-button">新規登録</button>
-          <button class="button" type="button" id="login-resend-button">確認メールを再送</button>
+          <button class="button" type="button" id="login-signup-button">登録メールを送信</button>
+          <button class="button" type="button" id="login-resend-button">登録メールを再送</button>
         </div>
       </form>
 
@@ -85,6 +85,6 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="login.js?v=hide-disabled-oauth-1"></script>
+  <script src="login.js?v=passwordless-signup-1"></script>
 </body>
 </html>

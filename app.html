@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=hide-disabled-oauth-1">
+  <link rel="stylesheet" href="style.css?v=passwordless-signup-1">
 </head>
 <body class="app-mode">
   <header class="header">
@@ -89,7 +89,7 @@
       <div class="auth-panel planner-gate" id="planner-gate">
         <div class="planner-panel-head">
           <h3>予定管理を使う</h3>
-          <span class="planner-hint">初回は新規登録してください</span>
+          <span class="planner-hint">新規登録はメールアドレスだけで始められます</span>
         </div>
         <form class="auth-form" id="planner-auth-form">
           <label>
@@ -97,13 +97,13 @@
             <input id="planner-auth-email" type="email" autocomplete="email" placeholder="you@example.com">
           </label>
           <label>
-            <span>パスワード</span>
-            <input id="planner-auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上">
+            <span>パスワード（ログイン時）</span>
+            <input id="planner-auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="登録後に設定">
           </label>
           <div class="auth-actions">
             <button class="button primary" type="submit">ログイン</button>
-            <button class="button" type="button" id="planner-signup-button">新規登録</button>
-            <button class="button" type="button" id="planner-resend-button">確認メールを再送</button>
+            <button class="button" type="button" id="planner-signup-button">登録メールを送信</button>
+            <button class="button" type="button" id="planner-resend-button">登録メールを再送</button>
           </div>
           <div class="oauth-actions oauth-actions-branded" aria-label="外部アカウントでログイン">
             <button class="button" type="button" data-planner-oauth="google"><span class="oauth-logo oauth-google" aria-hidden="true">G</span><span>Googleで続ける</span></button>
@@ -335,13 +335,13 @@
             <input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
           </label>
           <label>
-            <span>パスワード</span>
-            <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上" required>
+            <span>パスワード（ログイン時）</span>
+            <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="6" placeholder="登録後に設定">
           </label>
           <div class="auth-actions">
             <button class="button primary" type="submit" data-auth-action="login">ログイン</button>
-            <button class="button" type="button" id="signup-button">新規登録</button>
-            <button class="button" type="button" id="resend-button">確認メールを再送</button>
+            <button class="button" type="button" id="signup-button">登録メールを送信</button>
+            <button class="button" type="button" id="resend-button">登録メールを再送</button>
           </div>
         </form>
         <div class="auth-session" id="auth-session" hidden>
@@ -390,7 +390,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=hide-disabled-oauth-1"></script>
+  <script src="planner.js?v=passwordless-signup-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
@@ -428,6 +428,11 @@
       const setStatus = (message, tone = "muted") => {
         status.textContent = message;
         status.dataset.tone = tone;
+      };
+      const getPasswordSetupRedirectUrl = () => {
+        const url = new URL(AUTH_REDIRECT_URL, window.location.href);
+        url.searchParams.set("set_password", "1");
+        return url.toString();
       };
 
       const updateAuthView = (session) => {
@@ -593,19 +598,19 @@
 
       signupButton.addEventListener("click", async () => {
         const email = authEmailInput.value.trim();
-        const password = authPasswordInput.value;
 
-        if (!email || !password) {
-          setAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+        if (!email) {
+          setAuthStatus("登録するメールアドレスを入力してください。パスワードはメール確認後に設定できます。", "warning");
           return;
         }
 
-        setAuthStatus("登録しています。");
-        const { data, error } = await supabase.auth.signUp({
+        setAuthStatus("登録メールを送信しています。");
+        const { data, error } = await supabase.auth.signInWithOtp({
           email,
-          password,
           options: {
-            emailRedirectTo: AUTH_REDIRECT_URL
+            emailRedirectTo: getPasswordSetupRedirectUrl(),
+            shouldCreateUser: true,
+            data: { needs_password_setup: true }
           }
         });
 
@@ -618,23 +623,24 @@
           await supabase.auth.signOut();
         }
 
-        setAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。届かない場合は再送してください。", "success");
+        setAuthStatus("登録メールを送信しました。メール内のリンクを開くと、パスワード設定へ進めます。", "success");
       });
 
       resendButton.addEventListener("click", async () => {
         const email = authEmailInput.value.trim();
 
         if (!email) {
-          setAuthStatus("確認メールを再送するメールアドレスを入力してください。", "warning");
+          setAuthStatus("登録メールを再送するメールアドレスを入力してください。", "warning");
           return;
         }
 
-        setAuthStatus("確認メールを再送しています。");
-        const { error } = await supabase.auth.resend({
-          type: "signup",
+        setAuthStatus("登録メールを再送しています。");
+        const { error } = await supabase.auth.signInWithOtp({
           email,
           options: {
-            emailRedirectTo: AUTH_REDIRECT_URL
+            emailRedirectTo: getPasswordSetupRedirectUrl(),
+            shouldCreateUser: true,
+            data: { needs_password_setup: true }
           }
         });
 
@@ -643,7 +649,7 @@
           return;
         }
 
-        setAuthStatus("確認メールを再送しました。届かない場合はSupabaseのメール送信設定と迷惑メールフォルダを確認してください。", "success");
+        setAuthStatus("登録メールを再送しました。メール内のリンクを開いてください。", "success");
       });
 
       logoutButton.addEventListener("click", async () => {

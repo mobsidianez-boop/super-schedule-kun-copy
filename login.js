@@ -139,20 +139,22 @@
       return;
     }
     const email = emailInput.value.trim();
-    const password = passwordInput.value;
-    if (!email || !password) {
-      setStatus("メールアドレスとパスワードを入力してください。", "warning");
+    if (!email) {
+      setStatus("登録するメールアドレスを入力してください。パスワードはメール確認後に設定できます。", "warning");
       return;
     }
 
-    setStatus("登録しています。");
+    setStatus("登録メールを送信しています。");
     let data = null;
     let error = null;
     try {
-      ({ data, error } = await client.auth.signUp({
+      ({ data, error } = await client.auth.signInWithOtp({
         email,
-        password,
-        options: { emailRedirectTo: authRedirectUrl },
+        options: {
+          emailRedirectTo: getPasswordSetupRedirectUrl(),
+          shouldCreateUser: true,
+          data: { needs_password_setup: true },
+        },
       }));
     } catch (caughtError) {
       error = caughtError;
@@ -164,7 +166,7 @@
     if (data.session) {
       await client.auth.signOut();
     }
-    setStatus("確認メールを送りました。メール内のリンクを開いてからログインしてください。", "success");
+    setStatus("登録メールを送りました。メール内のリンクを開くと、パスワード設定へ進めます。", "success");
   }
 
   async function resendConfirmation() {
@@ -174,17 +176,20 @@
     }
     const email = emailInput.value.trim();
     if (!email) {
-      setStatus("確認メールを送るメールアドレスを入力してください。", "warning");
+      setStatus("登録メールを送るメールアドレスを入力してください。", "warning");
       return;
     }
 
-    setStatus("確認メールを再送しています。");
+    setStatus("登録メールを再送しています。");
     let error = null;
     try {
-      ({ error } = await client.auth.resend({
-        type: "signup",
+      ({ error } = await client.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: authRedirectUrl },
+        options: {
+          emailRedirectTo: getPasswordSetupRedirectUrl(),
+          shouldCreateUser: true,
+          data: { needs_password_setup: true },
+        },
       }));
     } catch (caughtError) {
       error = caughtError;
@@ -193,7 +198,7 @@
       setStatus(`確認メールを送れませんでした: ${getErrorText(error)}`, "error");
       return;
     }
-    setStatus("確認メールを再送しました。", "success");
+    setStatus("登録メールを再送しました。メール内のリンクを開いてください。", "success");
   }
 
   async function loginWithOAuth(provider) {
@@ -359,6 +364,12 @@
 
   function normalizeSupabaseUrl(value) {
     return String(value || "").trim().replace(/\/+$/, "");
+  }
+
+  function getPasswordSetupRedirectUrl() {
+    const url = new URL(authRedirectUrl, window.location.href);
+    url.searchParams.set("set_password", "1");
+    return url.toString();
   }
 
   function isEmailVerified(user) {

@@ -84,6 +84,7 @@
   let expiredNotice = "";
   let animatedEventId = "";
   let expirySweepId = null;
+  let passwordSetupPromptOpen = false;
   const placeLookupIds = new Set();
   const enabledPlannerOAuthProviders = new Set();
   const plannerProviderLabels = {
@@ -499,32 +500,27 @@
 
   async function signupPlanner() {
     const email = plannerAuthEmail.value.trim();
-    const password = plannerAuthPassword.value;
-    if (!email || !password) {
-      setPlannerAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
+    if (!email) {
+      setPlannerAuthStatus("登録するメールアドレスを入力してください。パスワードはメール確認後に設定できます。", "warning");
       animateGate("gate-shake");
       return;
     }
 
-    setPlannerAuthStatus("登録しています。");
+    setPlannerAuthStatus("登録メールを送信しています。");
     let data = null;
     let error = null;
     if (plannerSupabase) {
       try {
-        ({ data, error } = await plannerSupabase.auth.signUp({
+        ({ data, error } = await plannerSupabase.auth.signInWithOtp({
           email,
-          password,
           options: {
-            emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
+            emailRedirectTo: getPasswordSetupRedirectUrl(),
+            shouldCreateUser: true,
+            data: { needs_password_setup: true },
           },
         }));
       } catch (caughtError) {
         error = caughtError;
-      }
-      if (isFetchFailure(error)) {
-        const fallback = await signupPlannerViaRest(email, password);
-        data = fallback.data;
-        error = fallback.error;
       }
     } else {
       error = new Error("Supabase client is unavailable");
@@ -540,7 +536,7 @@
       await plannerSupabase.auth.signOut();
     }
 
-    setPlannerAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。", "success");
+    setPlannerAuthStatus("登録メールを送信しました。メール内のリンクを開くと、パスワード設定へ進めます。", "success");
   }
 
   async function signInPlannerViaRest(email, password) {
@@ -614,32 +610,30 @@
     }
     const email = plannerAuthEmail.value.trim();
     if (!email) {
-      setPlannerAuthStatus("確認メールを再送するメールアドレスを入力してください。", "warning");
+      setPlannerAuthStatus("登録メールを再送するメールアドレスを入力してください。", "warning");
       animateGate("gate-shake");
       return;
     }
-    setPlannerAuthStatus("確認メールを再送しています。");
+    setPlannerAuthStatus("登録メールを再送しています。");
     let error = null;
     try {
-      ({ error } = await plannerSupabase.auth.resend({
-        type: "signup",
+      ({ error } = await plannerSupabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
+          emailRedirectTo: getPasswordSetupRedirectUrl(),
+          shouldCreateUser: true,
+          data: { needs_password_setup: true },
         },
       }));
     } catch (caughtError) {
       error = caughtError;
-    }
-    if (isFetchFailure(error)) {
-      error = await resendPlannerConfirmationViaRest(email);
     }
     if (error) {
       setPlannerAuthStatus(`確認メールを再送できませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
       return;
     }
-    setPlannerAuthStatus("確認メールを再送しました。メール内のリンクを開いてからログインしてください。", "success");
+    setPlannerAuthStatus("登録メールを再送しました。メール内のリンクを開いてください。", "success");
   }
 
   async function resendPlannerConfirmationViaRest(email) {
@@ -768,6 +762,58 @@
     }
   }
 
+  async function promptForPasswordSetupIfNeeded(session) {
+    if (!plannerSupabase || !session || !session.user) {
+      return;
+    }
+    if (passwordSetupPromptOpen) {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const userNeedsSetup = Boolean(session.user.user_metadata && session.user.user_metadata.needs_password_setup);
+    if (params.get("set_password") !== "1" && !userNeedsSetup) {
+      return;
+    }
+    passwordSetupPromptOpen = true;
+    const password = window.prompt("ログイン用パスワードを設定してください。6文字以上で入力してください。");
+    if (password === null) {
+      passwordSetupPromptOpen = false;
+      setPlannerAuthStatus("パスワード設定はまだ完了していません。次に開いたときにも設定できます。", "warning");
+      return;
+    }
+    if (password.length < 6) {
+      passwordSetupPromptOpen = false;
+      setPlannerAuthStatus("パスワードは6文字以上で設定してください。ページを開き直すと再設定できます。", "error");
+      return;
+    }
+    try {
+      const { error } = await plannerSupabase.auth.updateUser({
+        password,
+        data: { needs_password_setup: false },
+      });
+      if (error) {
+        throw error;
+      }
+      clearPasswordSetupQuery();
+      setPlannerAuthStatus("パスワードを設定しました。次回からメールアドレスとパスワードでログインできます。", "success");
+    } catch (error) {
+      passwordSetupPromptOpen = false;
+      setPlannerAuthStatus(`パスワードを設定できませんでした: ${getErrorText(error)}`, "error");
+    }
+  }
+
+  function clearPasswordSetupQuery() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("set_password");
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  function getPasswordSetupRedirectUrl() {
+    const url = new URL(CONFIG.authRedirectUrl || window.location.href, window.location.href);
+    url.searchParams.set("set_password", "1");
+    return url.toString();
+  }
+
   function clearTestSession(options = {}) {
     sessionStorage.removeItem(`${STORAGE_KEY}:test`);
     localStorage.removeItem(`${STORAGE_KEY}:test`);
@@ -824,6 +870,9 @@
     }
     if (!plannerCloudWarningShown) {
       setPlannerAuthStatus(message, "success");
+    }
+    if (plannerStorageMode === "user") {
+      promptForPasswordSetupIfNeeded(options.session);
     }
     pruneExpiredEvents();
     render();
