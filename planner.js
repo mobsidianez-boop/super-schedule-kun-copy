@@ -1074,7 +1074,7 @@
       return null;
     }
 
-    const scheduleText = pickScheduleText(preparedText);
+    const scheduleText = pickScheduleText(relevantRawText || preparedText);
     if (!scheduleText) {
       setDetectMessage("予定に関する日時や用事が見つかりませんでした。予定が書かれた部分だけを貼り付けてください。");
       return null;
@@ -1413,14 +1413,33 @@
       .split(/[\n。！？!?]/)
       .map((line) => normalizeScheduleText(line).trim())
       .filter(Boolean);
-    const candidates = lines.length > 1 ? [normalizeScheduleText(source), ...lines] : [normalizeScheduleText(source)];
+    const candidates = lines.length > 1 ? buildScheduleTextWindows(lines) : [normalizeScheduleText(source)];
 
     const scored = candidates
-      .map((line) => ({ line, score: scoreScheduleLine(line) }))
+      .map((line) => ({ line, score: scoreScheduleLine(line), signal: countReliableScheduleSignals(line) }))
       .filter((item) => item.score >= 3)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => b.signal - a.signal || b.score - a.score || a.line.length - b.line.length);
 
     return scored[0] ? scored[0].line : "";
+  }
+
+  function buildScheduleTextWindows(lines) {
+    const windows = [];
+    lines.forEach((line, index) => {
+      if (isTravelDurationText(line) || isChatNoiseLine(line)) {
+        return;
+      }
+      windows.push(line);
+      const next = lines[index + 1];
+      if (next && !isTravelDurationText(next) && !isChatNoiseLine(next)) {
+        windows.push(`${line} ${next}`);
+      }
+      const third = lines[index + 2];
+      if (next && third && !isTravelDurationText(third) && !isChatNoiseLine(third)) {
+        windows.push(`${line} ${next} ${third}`);
+      }
+    });
+    return uniqueStrings(windows);
   }
 
   function scoreScheduleLine(line) {
@@ -1436,6 +1455,15 @@
     if (line.length >= 6 && (hasDateSignal(line) || hasTimeSignal(line))) score += 1;
     if (/よろしく|ありがとう|お疲れ|確認|返信|添付|画像|スクショ/.test(line)) score -= 1;
     return score;
+  }
+
+  function countReliableScheduleSignals(line) {
+    let count = 0;
+    if (hasDateSignal(line)) count += 1;
+    if (hasTimeSignal(line)) count += 1;
+    if (hasEventWord(line)) count += 1;
+    if (detectLocation(line)) count += 1;
+    return count;
   }
 
   function hasDateSignal(text) {
@@ -1597,13 +1625,48 @@
     const secondText = cleanOcrText(secondResult.data && secondResult.data.text);
     const secondConfidence = Number(secondResult.data && secondResult.data.confidence);
     const secondScore = scoreOcrScheduleText(secondText);
+    const secondSignals = countReliableScheduleSignals(secondText);
     if (!secondText) {
       return firstText;
     }
-    if (!firstText || secondScore > firstScore || secondConfidence > firstConfidence + 8) {
+    if (!firstText && secondSignals >= 2) {
+      return secondText;
+    }
+    if (firstText && shouldUseRetryOcrText(firstText, secondText, firstScore, secondScore, firstConfidence, secondConfidence)) {
       return secondText;
     }
     return firstText;
+  }
+
+  function shouldUseRetryOcrText(firstText, secondText, firstScore, secondScore, firstConfidence, secondConfidence) {
+    const firstSignals = countReliableScheduleSignals(firstText);
+    const secondSignals = countReliableScheduleSignals(secondText);
+    if (secondSignals < Math.max(2, firstSignals)) {
+      return false;
+    }
+    if (secondScore < firstScore + 3 && secondConfidence < firstConfidence + 12) {
+      return false;
+    }
+    const similarity = getTextCharacterSimilarity(firstText, secondText);
+    if (similarity < 0.22 && firstSignals > 0) {
+      return false;
+    }
+    return true;
+  }
+
+  function getTextCharacterSimilarity(a, b) {
+    const left = new Set(normalizeScheduleText(a).replace(/\s/g, "").split(""));
+    const right = new Set(normalizeScheduleText(b).replace(/\s/g, "").split(""));
+    if (!left.size || !right.size) {
+      return 0;
+    }
+    let shared = 0;
+    left.forEach((char) => {
+      if (right.has(char)) {
+        shared += 1;
+      }
+    });
+    return shared / Math.max(left.size, right.size);
   }
 
   async function recognizeOcrSource(source, label) {
@@ -1666,10 +1729,28 @@
       .replace(/\r/g, "\n")
       .split("\n")
       .map((line) => line.trim())
-      .filter(Boolean)
+      .filter((line) => line && isLikelyOcrTextLine(line))
       .join("\n")
       .replace(/[ \t]+/g, " ")
       .slice(0, 900);
+  }
+
+  function isLikelyOcrTextLine(line) {
+    const value = String(line || "").trim();
+    if (!value) {
+      return false;
+    }
+    if (/^[\W_]+$/.test(value)) {
+      return false;
+    }
+    if (/^(.)\1{5,}$/.test(value.replace(/\s/g, ""))) {
+      return false;
+    }
+    if (/^[A-Za-z0-9+/=_-]{10,}$/.test(value) && !hasDateSignal(value) && !hasTimeSignal(value)) {
+      return false;
+    }
+    const meaningful = value.replace(/[^\p{L}\p{N}]/gu, "");
+    return meaningful.length >= 2;
   }
 
   function getErrorText(error) {
