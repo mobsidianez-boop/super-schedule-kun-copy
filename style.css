@@ -27,10 +27,12 @@ body {
   background:
     linear-gradient(120deg, rgba(57, 189, 248, 0.13), rgba(255, 125, 172, 0.08) 44%, rgba(255, 216, 107, 0.12)),
     var(--paper);
+  background-size: 180% 180%, auto;
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
   font-size: 18px;
   line-height: 1.85;
   overflow-x: hidden;
+  animation: ambientPageWash 26s ease-in-out infinite;
 }
 
 body::before,
@@ -49,18 +51,21 @@ body > * {
 
 body::before {
   background:
-    conic-gradient(from 18deg, transparent 0 8%, rgba(255, 255, 255, 0.62) 12%, transparent 20% 100%),
-    repeating-linear-gradient(102deg, transparent 0 42px, rgba(42, 157, 244, 0.06) 43px 44px);
-  opacity: 0.58;
-  animation: ambientSkyShift 34s linear infinite;
+    conic-gradient(from 18deg, transparent 0 8%, rgba(255, 255, 255, 0.68) 12%, transparent 20% 100%),
+    repeating-linear-gradient(102deg, transparent 0 42px, rgba(42, 157, 244, 0.075) 43px 44px);
+  opacity: 0.64;
+  animation: ambientSkyShift 42s linear infinite;
+  will-change: transform;
 }
 
 body::after {
   background:
+    linear-gradient(132deg, transparent 0 32%, rgba(255, 255, 255, 0.28) 38%, transparent 45% 100%),
     radial-gradient(circle, rgba(255, 255, 255, 0.78) 0 1px, transparent 2px) 0 0 / 54px 54px,
-    radial-gradient(circle, rgba(255, 216, 107, 0.34) 0 1px, transparent 2px) 18px 24px / 86px 86px;
-  opacity: 0.5;
-  animation: ambientSparkleDrift 24s linear infinite;
+    radial-gradient(circle, rgba(255, 216, 107, 0.36) 0 1px, transparent 2px) 18px 24px / 86px 86px;
+  opacity: 0.56;
+  animation: ambientSparkleDrift 31s linear infinite;
+  will-change: transform;
 }
 
 .landing-mode .planner,
@@ -1841,6 +1846,16 @@ h3 {
   }
 }
 
+@keyframes ambientPageWash {
+  0%,
+  100% {
+    background-position: 0% 40%, 0 0;
+  }
+  50% {
+    background-position: 100% 60%, 0 0;
+  }
+}
+
 @keyframes ambientSkyShift {
   to {
     transform: rotate(360deg);
@@ -2517,16 +2532,18 @@ footer {
 @media (max-width: 680px) {
   body {
     font-size: 17px;
+    animation-duration: 42s;
   }
 
   body::before {
-    opacity: 0.24;
-    animation-duration: 48s;
+    opacity: 0.2;
+    animation-duration: 64s;
   }
 
   body::after {
-    opacity: 0.2;
-    background-size: 78px 78px, 112px 112px;
+    opacity: 0.18;
+    background-size: auto, 78px 78px, 112px 112px;
+    animation-duration: 52s;
   }
 
   .planner::before {
