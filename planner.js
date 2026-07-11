@@ -34,6 +34,7 @@
   const endInput = document.querySelector("#event-end");
   const locationInput = document.querySelector("#event-location");
   const travelInput = document.querySelector("#event-travel");
+  const stopsInput = document.querySelector("#event-stops");
   const clearButton = document.querySelector("#clear-events-button");
   const detectForm = document.querySelector("#detect-form");
   const detectText = document.querySelector("#detect-text");
@@ -995,6 +996,7 @@
     const end = endInput.value;
     let location = cleanText(locationInput.value, 48);
     const notifyLeadMinutes = clampNumber(travelInput.value || 30, 0, 240);
+    const stops = parseStopsInput(stopsInput ? stopsInput.value : "");
 
     if (!title || !date || !start || !end) {
       showSummary("予定名・日付・開始・終了を入力してください。");
@@ -1027,6 +1029,7 @@
       start,
       end,
       location,
+      stops,
       travelMinutes: 0,
       notifyLeadMinutes,
       createdAt: new Date().toISOString(),
@@ -1034,6 +1037,9 @@
 
     if (locationConfirmed || location) {
       event.placePending = true;
+    }
+    if (stops.length) {
+      event.stopsPending = true;
     }
 
     return event;
@@ -1087,6 +1093,55 @@
       inferredDate: !detectedDate,
       inferredTime: !detectedStart,
     };
+  }
+
+  function parseStopsInput(value) {
+    return String(value || "")
+      .split(/\r?\n/)
+      .map((line) => parseStopLine(line))
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+
+  function parseStopLine(line) {
+    const normalized = cleanText(normalizeScheduleText(line), 120);
+    if (!normalized) {
+      return null;
+    }
+    const timeMatch = normalized.match(/^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])[:：][0-5]\d|^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])時(?:[0-5]?\d分?)?/);
+    const time = timeMatch ? (detectTime(timeMatch[0]) || "") : "";
+    const rest = cleanText(timeMatch ? normalized.slice(timeMatch[0].length) : normalized, 100)
+      .replace(/^[\s、。・:：-]+/, "");
+    const location = cleanLocation(detectLocation(rest) || rest.split(/\s+/)[0] || rest);
+    const note = cleanText(location ? rest.replace(location, "") : rest, 48)
+      .replace(/^[\s、。・:：-]+/, "")
+      .replace(/^(で|にて|に|へ|での)\s*/, "");
+    if (!location) {
+      return null;
+    }
+    return {
+      id: createId(),
+      time,
+      location,
+      title: note || `${location}で予定`,
+      place: null,
+      placePending: true,
+    };
+  }
+
+  function formatStopsInput(stops) {
+    return getEventStops(stops)
+      .map((stop) => [stop.time, stop.location, stop.title].filter(Boolean).join(" "))
+      .join("\n");
+  }
+
+  function mergeEditedStops(event, nextStops) {
+    const previous = getEventStops(event);
+    return nextStops.map((stop) => {
+      const match = previous.find((item) => item.time === stop.time && item.location === stop.location && item.title === stop.title)
+        || previous.find((item) => item.time === stop.time && item.location === stop.location);
+      return match ? { ...stop, id: match.id, place: match.place || null, placePending: !match.place } : stop;
+    });
   }
 
   function prepareScheduleSource(rawText) {
@@ -1570,6 +1625,54 @@
     };
   }
 
+  function getEventStops(eventOrStops) {
+    const stops = Array.isArray(eventOrStops) ? eventOrStops : eventOrStops && Array.isArray(eventOrStops.stops) ? eventOrStops.stops : [];
+    return stops
+      .map((stop) => ({
+        id: stop.id || createId(),
+        time: cleanText(stop.time || "", 5),
+        title: cleanText(stop.title || "", 48),
+        location: cleanLocation(stop.location || ""),
+        place: stop.place || null,
+        placePending: Boolean(stop.placePending),
+      }))
+      .filter((stop) => stop.location);
+  }
+
+  function getEventRouteTargets(event) {
+    const targets = [];
+    if (event && event.location) {
+      targets.push({
+        id: "main",
+        eventId: event.id,
+        title: event.title,
+        time: event.start || "",
+        location: event.location,
+        place: event.place,
+        kind: "main",
+        event,
+      });
+    }
+    getEventStops(event).forEach((stop) => {
+      targets.push({
+        id: stop.id,
+        eventId: event.id,
+        title: stop.title || event.title,
+        time: stop.time,
+        location: stop.location,
+        place: stop.place,
+        kind: "stop",
+        stop,
+        event,
+      });
+    });
+    return targets;
+  }
+
+  function hasRouteTargets(event) {
+    return getEventRouteTargets(event).some((target) => target.location);
+  }
+
   async function confirmPlaceCandidate(location, event) {
     let query = location;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1680,15 +1783,22 @@
   }
 
   async function enrichEventPlaceInBackground(event) {
-    if (!event || !event.location || event.place || !event.placePending) {
+    const mainNeedsLookup = Boolean(event && event.location && event.placePending && !event.place);
+    const stopsNeedLookup = Boolean(event && getEventStops(event).some((stop) => stop.placePending && !stop.place));
+    if (!event || (!mainNeedsLookup && !stopsNeedLookup)) {
       return;
     }
 
     showSummary("予定を追加しました。場所の座標を調べています。リアルタイム混雑は交通API接続時だけ表示します。");
     try {
-      const place = await fetchPlaceIntel(event.location, event);
+      const place = event.location && event.placePending && !event.place ? await fetchPlaceIntel(event.location, event) : event.place;
+      const stops = [];
+      for (const stop of getEventStops(event)) {
+        const stopPlace = stop.placePending && !stop.place ? await fetchPlaceIntel(stop.location, event) : stop.place;
+        stops.push({ ...stop, place: stopPlace || stop.place || null, placePending: false });
+      }
       events = events.map((item) => item.id === event.id
-        ? { ...item, place, placePending: false }
+        ? { ...item, place, placePending: false, stops, stopsPending: false }
         : item);
       saveEvents();
       render();
@@ -1698,7 +1808,7 @@
       }
     } catch {
       events = events.map((item) => item.id === event.id
-        ? { ...item, placePending: false }
+        ? { ...item, placePending: false, stopsPending: false }
         : item);
       saveEvents();
       render();
@@ -1764,7 +1874,7 @@
   }
 
   async function handleRouteLookup() {
-    const dayEvents = getActiveEvents().filter((item) => item.location);
+    const dayEvents = getActiveEvents().filter((item) => hasRouteTargets(item));
     if (!navigator.geolocation) {
       setRouteStatus("このブラウザは現在地取得に対応していません。");
       return;
@@ -1795,39 +1905,40 @@
       }
 
       for (const event of dayEvents) {
-        if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
-          setRouteStatus(`${event.location} の座標を調べています。`);
-          event.place = await fetchPlaceIntel(event.location, event);
-        }
+        await ensureEventPlaces(event);
+        const storedEvent = events.find((item) => item.id === event.id) || event;
+        for (const target of getEventRouteTargets(storedEvent)) {
+          if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
+            routeResults.push({
+              event: storedEvent,
+              target,
+              status: "座標を取得できませんでした。",
+            });
+            continue;
+          }
 
-        if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
-          routeResults.push({
-            event,
-            status: "座標を取得できませんでした。",
-          });
-          continue;
-        }
-
-        try {
-          setRouteStatus(`${event.location} への移動時間を調べています。`);
-          const route = await fetchRouteEstimate(current, event.place, event);
-          routeResults.push({ event, route });
-          drawEventRoute(event, route, true);
-        } catch (error) {
-          routeResults.push({
-            event,
-            status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
-          });
-          drawEventRoute(event, null, true);
+          try {
+            setRouteStatus(`${target.location} への移動時間を調べています。`);
+            const route = await fetchRouteEstimate(current, target.place, storedEvent);
+            routeResults.push({ event: storedEvent, target, route });
+            drawEventRoute(target, route, true);
+          } catch (error) {
+            routeResults.push({
+              event: storedEvent,
+              target,
+              status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
+            });
+            drawEventRoute(target, null, true);
+          }
         }
       }
 
       saveEvents();
       render();
       clearRouteAndEventLayers();
-      routeResults.forEach(({ event, route }) => {
-        if (event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
-          drawEventRoute(event, route || null);
+      routeResults.forEach(({ target, route }) => {
+        if (target && target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon)) {
+          drawEventRoute(target, route || null);
         }
       });
       renderRouteList(routeResults);
@@ -2187,11 +2298,12 @@
       .bindPopup("現在地");
   }
 
-  function drawEventRoute(event, route, openPopup = false) {
-    const marker = window.L.marker([event.place.lat, event.place.lon])
+  function drawEventRoute(target, route, openPopup = false) {
+    const timeLabel = target.time ? `${escapeHtml(target.time)} ` : "";
+    const marker = window.L.marker([target.place.lat, target.place.lon])
       .addTo(plannerMap)
-      .bindPopup(`${escapeHtml(event.title)}<br>${escapeHtml(event.location || "場所未設定")}<br>タッチで経路を表示`);
-    marker.on("click", () => showEventRouteDetails(event.id));
+      .bindPopup(`${timeLabel}${escapeHtml(target.title)}<br>${escapeHtml(target.location || "場所未設定")}<br>タッチで経路を表示`);
+    marker.on("click", () => showEventRouteDetails(target.eventId, target.id));
     eventMarkers.push(marker);
     if (openPopup && typeof marker.openPopup === "function") {
       marker.openPopup();
@@ -2228,14 +2340,15 @@
     });
   }
 
-  function drawSchedulePlaceMarker(event) {
-    if (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon)) {
+  function drawSchedulePlaceMarker(target) {
+    if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
       return;
     }
-    const marker = window.L.marker([event.place.lat, event.place.lon])
+    const timeLabel = target.time ? `${escapeHtml(target.time)} ` : "";
+    const marker = window.L.marker([target.place.lat, target.place.lon])
       .addTo(plannerMap)
-      .bindPopup(`${escapeHtml(event.title)}<br>${escapeHtml(event.location || "場所未設定")}<br>タッチで経路を表示`);
-    marker.on("click", () => showEventRouteDetails(event.id));
+      .bindPopup(`${timeLabel}${escapeHtml(target.title)}<br>${escapeHtml(target.location || "場所未設定")}<br>タッチで経路を表示`);
+    marker.on("click", () => showEventRouteDetails(target.eventId, target.id));
     eventMarkers.push(marker);
   }
 
@@ -2256,12 +2369,18 @@
 
     const points = [];
     dayEvents
-      .filter((event) => event.location)
+      .filter((event) => hasRouteTargets(event))
       .forEach((event) => {
-        if (event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
-          drawSchedulePlaceMarker(event);
-          points.push([event.place.lat, event.place.lon]);
-        } else if (!event.place) {
+        let needsLookup = false;
+        getEventRouteTargets(event).forEach((target) => {
+          if (target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon)) {
+            drawSchedulePlaceMarker(target);
+            points.push([target.place.lat, target.place.lon]);
+          } else {
+            needsLookup = true;
+          }
+        });
+        if (needsLookup) {
           enrichEventPlaceForMap(event);
         }
       });
@@ -2282,14 +2401,23 @@
   }
 
   async function enrichEventPlaceForMap(event) {
-    if (!event || !event.location || placeLookupIds.has(event.id)) {
+    if (!event || !hasRouteTargets(event) || placeLookupIds.has(event.id)) {
       return;
     }
     placeLookupIds.add(event.id);
     try {
-      const place = await fetchPlaceIntel(event.location, event);
+      const place = event.location && (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon))
+        ? await fetchPlaceIntel(event.location, event)
+        : event.place;
+      const stops = [];
+      for (const stop of getEventStops(event)) {
+        const stopPlace = !stop.place || !Number.isFinite(stop.place.lat) || !Number.isFinite(stop.place.lon)
+          ? await fetchPlaceIntel(stop.location, event)
+          : stop.place;
+        stops.push({ ...stop, place: stopPlace, placePending: false });
+      }
       events = events.map((item) => item.id === event.id
-        ? { ...item, place, placePending: false }
+        ? { ...item, place, placePending: false, stops, stopsPending: false }
         : item);
       saveEvents();
       render();
@@ -2298,12 +2426,35 @@
     }
   }
 
-  async function showEventRouteDetails(eventId) {
+  async function ensureEventPlaces(event) {
+    if (!event || !hasRouteTargets(event)) {
+      return event;
+    }
+    let place = event.place;
+    if (event.location && (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon))) {
+      setRouteStatus(`${event.location} の座標を調べています。`);
+      place = await fetchPlaceIntel(event.location, event);
+    }
+    const stops = [];
+    for (const stop of getEventStops(event)) {
+      let stopPlace = stop.place;
+      if (!stopPlace || !Number.isFinite(stopPlace.lat) || !Number.isFinite(stopPlace.lon)) {
+        setRouteStatus(`${stop.location} の座標を調べています。`);
+        stopPlace = await fetchPlaceIntel(stop.location, event);
+      }
+      stops.push({ ...stop, place: stopPlace || null, placePending: false });
+    }
+    const updated = { ...event, place, placePending: false, stops, stopsPending: false };
+    events = events.map((item) => item.id === event.id ? updated : item);
+    return updated;
+  }
+
+  async function showEventRouteDetails(eventId, targetId = "main") {
     if (!ensurePlannerAccess()) {
       return;
     }
     const event = events.find((item) => item.id === eventId);
-    if (!event || !event.location) {
+    if (!event || !hasRouteTargets(event)) {
       setRouteStatus("この予定には場所がありません。");
       return;
     }
@@ -2312,24 +2463,21 @@
       return;
     }
 
-    setRouteStatus(`${event.location} への経路を調べています。`);
+    const initialTarget = getEventRouteTargets(event).find((target) => target.id === targetId) || getEventRouteTargets(event)[0];
+    setRouteStatus(`${initialTarget.location} への経路を調べています。`);
     try {
-      activeRouteEventId = eventId;
+      activeRouteEventId = `${eventId}:${initialTarget.id}`;
       const current = currentPosition || await getCurrentPosition();
       currentPosition = current;
       initMap(current, 15, { recenter: true });
       updateCurrentPositionMarker(current);
 
-      let target = event;
-      if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
-        const place = await fetchPlaceIntel(target.location, target);
-        events = events.map((item) => item.id === target.id ? { ...item, place, placePending: false } : item);
-        saveEvents();
-        target = events.find((item) => item.id === eventId) || { ...event, place };
-      }
+      const updatedEvent = await ensureEventPlaces(event);
+      saveEvents();
+      const target = getEventRouteTargets(updatedEvent).find((item) => item.id === initialTarget.id) || getEventRouteTargets(updatedEvent)[0];
 
       if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
-        renderRouteList([{ event: target, status: "座標を取得できませんでした。" }]);
+        renderRouteList([{ event: updatedEvent, target, status: "座標を取得できませんでした。" }]);
         setRouteStatus("場所の座標を取得できませんでした。");
         activeRouteEventId = "";
         return;
@@ -2337,23 +2485,24 @@
 
       clearRouteAndEventLayers();
       updateCurrentPositionMarker(current);
-      const route = await fetchRouteEstimate(current, target.place, target);
+      const route = await fetchRouteEstimate(current, target.place, updatedEvent);
       drawEventRoute(target, route, true);
-      renderRouteList([{ event: target, route, selected: true }]);
-      fitMapToContent(current, [{ event: target }]);
+      renderRouteList([{ event: updatedEvent, target, route, selected: true }]);
+      fitMapToContent(current, [{ target }]);
       setRouteStatus(`${target.title} へのルートを表示しています。移動手段ごとの時間は目安です。`);
     } catch (error) {
       activeRouteEventId = "";
-      renderRouteList([{ event, status: `経路を取得できませんでした: ${getErrorText(error)}` }]);
+      renderRouteList([{ event, target: initialTarget, status: `経路を取得できませんでした: ${getErrorText(error)}` }]);
       setRouteStatus(`経路を取得できませんでした: ${getErrorText(error)}`);
     }
   }
 
   function fitMapToContent(current, routeResults) {
     const points = [[current.lat, current.lon]];
-    routeResults.forEach(({ event }) => {
-      if (event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
-        points.push([event.place.lat, event.place.lon]);
+    routeResults.forEach(({ event, target }) => {
+      const routeTarget = target || getEventRouteTargets(event)[0];
+      if (routeTarget && routeTarget.place && Number.isFinite(routeTarget.place.lat) && Number.isFinite(routeTarget.place.lon)) {
+        points.push([routeTarget.place.lat, routeTarget.place.lon]);
       }
     });
     if (points.length > 1) {
@@ -2370,25 +2519,32 @@
       return;
     }
 
-    results.forEach(({ event, route, status }) => {
+    results.forEach(({ event, target, route, status }) => {
+      const routeTarget = target || getEventRouteTargets(event)[0] || {
+        id: "main",
+        eventId: event.id,
+        title: event.title,
+        time: event.start || "",
+        location: event.location || "",
+      };
       const item = document.createElement("li");
-      if (event.location) {
+      if (routeTarget.location) {
         item.tabIndex = 0;
         item.setAttribute("role", "button");
-        item.addEventListener("click", () => showEventRouteDetails(event.id));
+        item.addEventListener("click", () => showEventRouteDetails(event.id, routeTarget.id));
         item.addEventListener("keydown", (keyboardEvent) => {
           if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
             keyboardEvent.preventDefault();
-            showEventRouteDetails(event.id);
+            showEventRouteDetails(event.id, routeTarget.id);
           }
         });
       }
       const title = document.createElement("strong");
-      title.textContent = event.title;
+      title.textContent = routeTarget.time ? `${routeTarget.time} ${routeTarget.title}` : routeTarget.title;
       item.append(title);
 
       if (route) {
-        item.append(createTextSpan(`${event.location}: 車で約${route.durationMinutes}分 / ${route.distanceKm}km`));
+        item.append(createTextSpan(`${routeTarget.location}: 車で約${route.durationMinutes}分 / ${route.distanceKm}km`));
         if (Array.isArray(route.modes)) {
           route.modes.forEach((mode) => {
             item.append(createTextSpan(`${mode.label}: 約${mode.minutes}分（${mode.note}）`));
@@ -2401,7 +2557,7 @@
         }
         item.append(createTextSpan(formatWeatherText(route.weather)));
       } else {
-        item.append(createTextSpan(`${event.location}: ${status || "移動時間を取得できませんでした。"}`));
+        item.append(createTextSpan(`${routeTarget.location}: ${status || "移動時間を取得できませんでした。"}`));
       }
 
       routeList.append(item);
@@ -2841,11 +2997,13 @@
       const title = document.createElement("strong");
       title.textContent = event.title;
       const meta = document.createElement("span");
+      const stops = getEventStops(event);
       meta.textContent = [
         formatDate(event.date),
         getEventTimeLabel(event),
         event.location ? `場所: ${event.location}` : "場所未設定",
-      ].join(" / ");
+        stops.length ? `時刻別の場所: ${stops.length}件` : "",
+      ].filter(Boolean).join(" / ");
       if (event.inferredTime) {
         const note = document.createElement("span");
         note.className = "time-missing-note";
@@ -2855,7 +3013,7 @@
       const actions = document.createElement("div");
       actions.className = "event-actions";
       const routeButton = createSmallButton("地図", () => showEventRouteDetails(event.id));
-      routeButton.disabled = !event.location;
+      routeButton.disabled = !hasRouteTargets(event);
       const editButton = createSmallButton("編集", () => editEvent(event.id));
       const deleteButton = createSmallButton("削除", () => deleteEvent(event.id));
       actions.append(routeButton, editButton, deleteButton);
@@ -2922,7 +3080,8 @@
       const title = document.createElement("strong");
       title.textContent = event.title;
       const meta = document.createElement("span");
-      meta.textContent = `${event.start}-${event.end}${event.location ? ` / ${event.location}` : ""}`;
+      const stopSummary = getEventStops(event).length ? ` / 時刻別場所${getEventStops(event).length}件` : "";
+      meta.textContent = `${event.start}-${event.end}${event.location ? ` / ${event.location}` : ""}${stopSummary}`;
       block.append(title, meta);
       grid.append(block);
     });
@@ -2953,7 +3112,8 @@
       const list = document.createElement("ul");
       floatingEvents.forEach((event) => {
         const item = document.createElement("li");
-        item.textContent = `${event.title} / 時刻が不明です${event.location ? ` / 場所: ${event.location}` : ""}`;
+        const stops = getEventStops(event);
+        item.textContent = `${event.title} / 時刻が不明です${event.location ? ` / 場所: ${event.location}` : ""}${stops.length ? ` / 時刻別場所${stops.length}件` : ""}`;
         item.addEventListener("click", () => editEvent(event.id));
         list.append(item);
       });
@@ -3017,11 +3177,27 @@
         false,
         item.id,
       ));
+      getEventStops(item)
+        .filter((stop) => stop.time)
+        .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
+        .forEach((stop) => {
+          timelineBoard.append(createTimelineRow(
+            stop.time,
+            stop.title,
+            `場所: ${stop.location}`,
+            false,
+            item.id,
+          ));
+        });
     });
   }
 
   function makeEventMeta(item) {
     const parts = [item.location ? `場所: ${item.location}` : "場所未設定"];
+    const stops = getEventStops(item);
+    if (stops.length) {
+      parts.push(`時刻別の場所: ${stops.map((stop) => `${stop.time || "時刻未定"} ${stop.location}`).join("、")}`);
+    }
     if (item.inferredTime) {
       parts.unshift("時刻が不明です");
     }
@@ -3165,6 +3341,9 @@
         location = inferredLocation;
       }
     }
+    const stopsText = window.prompt("時刻別の場所を1行ずつ入力してください。\n例: 13:00 渋谷駅 集合", formatStopsInput(target));
+    if (stopsText === null) return;
+    const stops = mergeEditedStops(target, parseStopsInput(stopsText));
     const notifyLeadMinutes = promptNumber("通知タイミング（開始何分前）", getNotifyLeadMinutes(target), 0, 240);
     if (notifyLeadMinutes === null) return;
 
@@ -3176,12 +3355,14 @@
       start,
       end,
       location,
+      stops,
       travelMinutes: 0,
       notifyLeadMinutes,
       inferredDate: false,
       inferredTime: false,
       place: locationChanged ? null : target.place,
       placePending: Boolean(location && locationChanged),
+      stopsPending: stops.some((stop) => stop.placePending),
       updatedAt: new Date().toISOString(),
     };
 
@@ -3572,6 +3753,9 @@
     endInput.value = minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
     if (travelInput) {
       travelInput.value = "30";
+    }
+    if (stopsInput) {
+      stopsInput.value = "";
     }
   }
 

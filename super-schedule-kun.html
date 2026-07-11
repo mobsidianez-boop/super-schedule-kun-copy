@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=route-wording-1">
+  <link rel="stylesheet" href="style.css?v=multi-stop-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -156,6 +156,10 @@
                 <input id="event-travel" type="number" min="0" max="240" step="5" placeholder="開始の何分前">
               </label>
             </div>
+            <label>
+              <span>時刻別の場所</span>
+              <textarea id="event-stops" rows="3" maxlength="360" placeholder="例: 13:00 渋谷駅 集合&#10;15:30 カフェ 休憩"></textarea>
+            </label>
             <button class="button primary" type="submit">予定に追加</button>
           </form>
         </div>
@@ -391,7 +395,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=route-wording-1"></script>
+  <script src="planner.js?v=multi-stop-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
