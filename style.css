@@ -484,37 +484,42 @@ h3 {
 .phone-current-dot {
   left: 28px;
   top: 38px;
-  width: 24px;
-  height: 22px;
+  width: 25px;
+  height: 25px;
   border: 2px solid #ffffff;
-  border-radius: 999px;
-  background: #8b6cff;
+  border-radius: 58% 58% 52% 52%;
+  background:
+    radial-gradient(circle at 34% 38%, #201b3f 0 2px, transparent 2.5px),
+    radial-gradient(circle at 66% 38%, #201b3f 0 2px, transparent 2.5px),
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.32) 0 4px, transparent 4.5px),
+    #8b6cff;
   box-shadow: 0 6px 14px rgba(91, 65, 190, 0.28);
   animation: currentCharacterWalk 920ms ease-in-out infinite;
+  transform-origin: 50% 100%;
 }
 
 .phone-current-dot::before {
   content: "";
   position: absolute;
-  left: 7px;
-  top: 8px;
-  width: 3px;
-  height: 4px;
-  border-radius: 999px;
-  background: #201b3f;
-  box-shadow: 7px 0 0 #201b3f;
+  left: 5px;
+  right: 5px;
+  bottom: -4px;
+  height: 7px;
+  border-radius: 0 0 999px 999px;
+  background:
+    radial-gradient(circle at 28% 48%, #7457df 0 4px, transparent 4.5px),
+    radial-gradient(circle at 72% 48%, #7457df 0 4px, transparent 4.5px);
 }
 
 .phone-current-dot::after {
   content: "";
   position: absolute;
-  left: 8px;
-  bottom: -4px;
-  width: 5px;
+  left: 5px;
+  right: 5px;
+  bottom: -7px;
   height: 3px;
   border-radius: 999px;
-  background: #6f4de2;
-  box-shadow: 8px 0 0 #6f4de2;
+  background: rgba(91, 65, 190, 0.18);
 }
 
 .phone-event-dot {
@@ -1334,30 +1339,45 @@ h3 {
   position: relative;
   display: block;
   width: 38px;
-  height: 34px;
+  height: 38px;
   border: 3px solid #ffffff;
-  border-radius: 999px;
-  background: #8b6cff;
+  border-radius: 58% 58% 52% 52%;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.34) 0 7px, transparent 7.5px),
+    linear-gradient(180deg, #9f88ff 0%, #7f62ea 100%);
   box-shadow: 0 8px 18px rgba(91, 65, 190, 0.3);
   animation: currentCharacterWalk 920ms ease-in-out infinite;
   transform-origin: 50% 100%;
 }
 
+.current-position-character::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: -6px;
+  height: 10px;
+  border-radius: 0 0 999px 999px;
+  background:
+    radial-gradient(circle at 27% 46%, #7355df 0 6px, transparent 6.5px),
+    radial-gradient(circle at 73% 46%, #7355df 0 6px, transparent 6.5px);
+}
+
 .current-position-character::after {
   content: "";
   position: absolute;
-  left: 15px;
+  left: 6px;
+  right: 6px;
   bottom: -10px;
-  width: 8px;
-  height: 10px;
-  border-radius: 0 0 999px 999px;
-  background: #8b6cff;
-  box-shadow: 0 4px 8px rgba(91, 65, 190, 0.2);
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(91, 65, 190, 0.18);
+  filter: blur(0.2px);
 }
 
 .character-eye {
   position: absolute;
-  top: 12px;
+  top: 14px;
   width: 5px;
   height: 7px;
   border-radius: 999px;
@@ -1365,30 +1385,15 @@ h3 {
 }
 
 .character-eye.left {
-  left: 11px;
+  left: 10px;
 }
 
 .character-eye.right {
-  right: 11px;
+  right: 10px;
 }
 
 .character-foot {
-  position: absolute;
-  bottom: -6px;
-  width: 9px;
-  height: 5px;
-  border-radius: 999px;
-  background: #6f4de2;
-}
-
-.character-foot.left {
-  left: 7px;
-  animation: currentFootLeft 920ms ease-in-out infinite;
-}
-
-.character-foot.right {
-  right: 7px;
-  animation: currentFootRight 920ms ease-in-out infinite;
+  display: none;
 }
 
 .map-legend {
