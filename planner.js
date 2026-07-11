@@ -1061,8 +1061,9 @@
     }
 
     const base = new Date();
-    const detectedDate = detectDate(scheduleText, base) || detectDate(preparedText, base) || detectDate(text, base);
-    const detectedStops = extractScheduleStops(preparedText);
+    const rawScheduleText = cleanText(normalizeScheduleText(rawText), 900);
+    const detectedDate = detectDate(scheduleText, base) || detectDate(preparedText, base) || detectDate(text, base) || detectDate(rawScheduleText, base);
+    const detectedStops = mergeDetectedStops(extractScheduleStops(rawText), extractScheduleStops(preparedText));
     const detectedRange = detectTimeRange(scheduleText);
     const fallbackRange = detectedRange.start && detectedRange.end ? detectedRange : detectTimeRange(preparedText);
     const stopTimes = detectedStops
@@ -1087,7 +1088,7 @@
     }
     const detectedLocation = detectLocation(scheduleText);
     let title = detectTitle(scheduleText, detectedLocation);
-    const date = resolveDetectedDate(`${scheduleText}\n${preparedText}`, detectedDate, base, start, end);
+    const date = resolveDetectedDate(`${scheduleText}\n${preparedText}\n${rawScheduleText}`, detectedDate, base, start, end);
     if (!date) {
       return null;
     }
@@ -1167,6 +1168,31 @@
         return;
       }
       const key = `${stop.time}|${stop.location}|${stop.title}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      stops.push(stop);
+    });
+    return stops.slice(0, 8);
+  }
+
+  function mergeDetectedStops(...groups) {
+    const stops = [];
+    const seen = new Set();
+    groups.flat().forEach((stop) => {
+      if (!stop || !stop.location) {
+        return;
+      }
+      const sameLocationIndex = stops.findIndex((item) => item.location === stop.location);
+      if (!stop.time && sameLocationIndex >= 0 && stops[sameLocationIndex].time) {
+        return;
+      }
+      if (stop.time && sameLocationIndex >= 0 && !stops[sameLocationIndex].time) {
+        seen.delete(`${stops[sameLocationIndex].time || ""}|${stops[sameLocationIndex].location}|${stops[sameLocationIndex].title || ""}`);
+        stops.splice(sameLocationIndex, 1);
+      }
+      const key = `${stop.time || ""}|${stop.location}|${stop.title || ""}`;
       if (seen.has(key)) {
         return;
       }
@@ -1284,7 +1310,7 @@
     if (/^(OK|Ok|ok|了解|りょ|うん|はい|よろしく|ありがとう|ありがと|助かる|またね|おつかれ|お疲れ|笑|w|www)$/i.test(value)) return true;
     if (/^(午前|午後)?\s*\d{1,2}[:：]\d{2}$/.test(value)) return true;
     if (/^\d{1,2}[:：]\d{2}\s*(既読)?$/.test(value)) return true;
-    if (/^(月|火|水|木|金|土|日|\d{1,2}\/\d{1,2})$/.test(value)) return true;
+    if (/^(月|火|水|木|金|土|日)$/.test(value)) return true;
     if (/^https?:\/\//i.test(value)) return true;
     if (/^[^\d]{1,8}$/.test(value) && !hasEventWord(value) && !detectLocation(value)) return true;
     return false;
@@ -1341,8 +1367,8 @@
       .replace(/\s+/g, " ")
       .trim();
 
-    while (/(\d)\s+(?=\d)/.test(text)) {
-      text = text.replace(/(\d)\s+(?=\d)/g, "$1");
+    while (/(^|[^\d/.\-:])(\d)\s+(?=\d)/.test(text)) {
+      text = text.replace(/(^|[^\d/.\-:])(\d)\s+(?=\d)/g, "$1$2");
     }
 
     while (/([一-龯ぁ-んァ-ヶー])\s+(?=[一-龯ぁ-んァ-ヶー])/.test(text)) {
