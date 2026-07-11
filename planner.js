@@ -76,6 +76,8 @@
   let cloudSyncInFlight = false;
   let candidateAddInFlight = false;
   let lastDetectMessage = "";
+  let lastOcrText = "";
+  let lastOcrTitleHint = "";
   const notificationTimers = new Map();
   let plannerMap = null;
   let overviewMarker = null;
@@ -214,14 +216,23 @@
       }
       return;
     }
-    const nextEvent = { ...detectedCandidate, id: createId(), createdAt: new Date().toISOString() };
+    const nextEvent = {
+      ...detectedCandidate,
+      id: createId(),
+      createdAt: new Date().toISOString(),
+      ...(detectedCandidate.fromOcr ? { place: null, placePending: Boolean(detectedCandidate.location), stopsPending: getEventStops(detectedCandidate).length > 0 } : {}),
+    };
     events = [nextEvent, ...events];
     animatedEventId = nextEvent.id;
     pruneExpiredEvents();
     saveEvents();
     if (events.some((item) => item.id === nextEvent.id)) {
       scheduleEventNotification(nextEvent, permissionPromise);
-      enrichEventPlaceInBackground(nextEvent);
+      if (!nextEvent.fromOcr) {
+        enrichEventPlaceInBackground(nextEvent);
+      } else if (nextEvent.placePending || nextEvent.stopsPending) {
+        setDetectMessage("予定を登録しました。座標は場所候補を確認したあとに保存します。");
+      }
     }
     viewDateInput.value = detectedCandidate.date;
     detectText.value = "";
@@ -1107,7 +1118,8 @@
       ({ start, end } = confirmAmbiguousTimePeriod(start, end));
     }
     const detectedLocation = detectLocation(scheduleText);
-    let title = detectTitle(scheduleText, detectedLocation);
+    const ocrTitleHint = getActiveOcrTitleHint(rawText, scheduleText, relevantRawText);
+    let title = ocrTitleHint || detectTitle(scheduleText, detectedLocation);
     const date = resolveDetectedDate(`${scheduleText}\n${preparedText}\n${rawScheduleText}`, detectedDate, base, start, end);
     if (!date) {
       return null;
@@ -1129,6 +1141,7 @@
       location,
       stops: detectedStops,
       sourceText,
+      fromOcr: rawText === lastOcrText,
       travelMinutes: 0,
       notifyLeadMinutes: 30,
       inferredDate: !detectedDate,
@@ -1530,12 +1543,15 @@
     setOcrStatus("画像を読み取っています。初回は少し時間がかかります。", 0.02);
 
     try {
+      lastOcrText = "";
+      lastOcrTitleHint = "";
       const text = await recognizeBestOcrText(file);
       if (!text) {
         setOcrStatus("文字を検出できませんでした。明るく、文字が大きい画像で試してください。", 0);
         return;
       }
 
+      lastOcrText = text;
       detectText.value = text;
       setOcrStatus("読み取りました。予定候補を確認しています。", 1);
       await makeCandidateFromText({ offerAutoAdd: true });
@@ -1546,7 +1562,7 @@
 
   async function makeCandidateFromText(options = {}) {
     detectedCandidate = detectSchedule(detectText.value);
-    if (detectedCandidate && detectedCandidate.location) {
+    if (detectedCandidate && detectedCandidate.location && !detectedCandidate.fromOcr) {
       const confirmed = window.confirm(`「${detectedCandidate.location}」はこの予定の場所ですか？`);
       if (confirmed) {
         detectedCandidate.placePending = true;
@@ -1612,29 +1628,34 @@
   async function recognizeBestOcrText(file) {
     const firstSource = await prepareImageForOcr(file, "balanced");
     const firstResult = await recognizeOcrSource(firstSource, "読み取り中");
-    const firstText = cleanOcrText(firstResult.data && firstResult.data.text);
+    const firstText = cleanOcrResultText(firstResult.data);
     const firstConfidence = Number(firstResult.data && firstResult.data.confidence);
     const firstScore = scoreOcrScheduleText(firstText);
     if (firstText && (firstScore >= 5 || firstConfidence >= 62)) {
+      lastOcrTitleHint = extractLargeOcrTitleHint(firstResult.data, firstText);
       return firstText;
     }
 
     setOcrStatus("文字色を優先して再確認しています。", 0.55);
     const secondSource = await prepareImageForOcr(file, "colorText");
     const secondResult = await recognizeOcrSource(secondSource, "文字色読み取り中");
-    const secondText = cleanOcrText(secondResult.data && secondResult.data.text);
+    const secondText = cleanOcrResultText(secondResult.data);
     const secondConfidence = Number(secondResult.data && secondResult.data.confidence);
     const secondScore = scoreOcrScheduleText(secondText);
     const secondSignals = countReliableScheduleSignals(secondText);
     if (!secondText) {
+      lastOcrTitleHint = extractLargeOcrTitleHint(firstResult.data, firstText);
       return firstText;
     }
     if (!firstText && secondSignals >= 2) {
+      lastOcrTitleHint = extractLargeOcrTitleHint(secondResult.data, secondText);
       return secondText;
     }
     if (firstText && shouldUseRetryOcrText(firstText, secondText, firstScore, secondScore, firstConfidence, secondConfidence)) {
+      lastOcrTitleHint = extractLargeOcrTitleHint(secondResult.data, secondText);
       return secondText;
     }
+    lastOcrTitleHint = extractLargeOcrTitleHint(firstResult.data, firstText);
     return firstText;
   }
 
@@ -1652,6 +1673,77 @@
       return false;
     }
     return true;
+  }
+
+  function extractLargeOcrTitleHint(data, text) {
+    const lines = Array.isArray(data && data.lines) ? data.lines : [];
+    if (!lines.length || !text) {
+      return "";
+    }
+    const normalizedText = normalizeScheduleText(text);
+    const lineItems = lines
+      .filter((line) => isLikelyHorizontalOcrLine(line))
+      .map((line, index) => {
+        const raw = cleanText(line && line.text, 80);
+        const normalized = normalizeScheduleText(raw);
+        const box = line && line.bbox ? line.bbox : {};
+        const height = Math.max(0, Number(box.y1) - Number(box.y0));
+        return { index, raw, normalized, height, score: scoreScheduleLine(normalized), signals: countReliableScheduleSignals(normalized) };
+      })
+      .filter((item) => item.normalized && isLikelyTitleLine(item.normalized) && normalizedText.includes(item.normalized));
+    if (!lineItems.length) {
+      return "";
+    }
+
+    const scheduleIndexes = new Set(lineItems
+      .filter((item) => item.score >= 3 || item.signals >= 2)
+      .map((item) => item.index));
+
+    const candidates = lineItems
+      .map((item) => {
+        const nearSchedule = [...scheduleIndexes].some((index) => Math.abs(index - item.index) <= 2);
+        const titleWordBonus = hasTitleKeyword(item.normalized) ? 35 : 0;
+        const scheduleBonus = nearSchedule ? 24 : 0;
+        const signalBonus = item.signals * 12 + Math.max(0, item.score) * 4;
+        return {
+          ...item,
+          titleScore: item.height * 2 + titleWordBonus + scheduleBonus + signalBonus,
+        };
+      })
+      .filter((item) => item.signals > 0 || hasTitleKeyword(item.normalized) || item.titleScore >= 36)
+      .sort((a, b) => b.titleScore - a.titleScore || b.height - a.height || a.index - b.index);
+
+    return candidates[0] ? cleanText(candidates[0].normalized, 48) : "";
+  }
+
+  function isLikelyTitleLine(line) {
+    const value = cleanText(line, 80);
+    if (!value || isChatNoiseLine(value) || isTravelDurationText(value)) {
+      return false;
+    }
+    if (hasDateSignal(value) && !hasTitleKeyword(value) && !hasEventWord(value)) {
+      return false;
+    }
+    if (/^(午前|午後)?\s*\d{1,2}[:：]\d{2}$/.test(value)) {
+      return false;
+    }
+    return value.replace(/[^\p{L}\p{N}]/gu, "").length >= 2;
+  }
+
+  function hasTitleKeyword(text) {
+    return /(旅行|旅|観光|プラン|日程|予定|ツアー|コース|イベント|ライブ|誕生日|パーティー|見学|体験|散策|ランチ|食事|集合|チェックイン|チェックアウト)/.test(normalizeScheduleText(text));
+  }
+
+  function getActiveOcrTitleHint(rawText, scheduleText, relevantRawText) {
+    const hint = cleanText(lastOcrTitleHint, 48);
+    if (!hint || !lastOcrText || String(rawText || "") !== lastOcrText) {
+      return "";
+    }
+    const source = normalizeScheduleText(`${scheduleText}\n${relevantRawText}\n${lastOcrText}`);
+    if (!source.includes(hint) || !isLikelyTitleLine(hint)) {
+      return "";
+    }
+    return hint;
   }
 
   function getTextCharacterSimilarity(a, b) {
@@ -1772,6 +1864,40 @@
     return maxGray - minGray;
   }
 
+  function cleanOcrResultText(data) {
+    const lines = Array.isArray(data && data.lines) ? data.lines : [];
+    if (!lines.length) {
+      return cleanOcrText(data && data.text);
+    }
+    return lines
+      .filter((line) => isLikelyHorizontalOcrLine(line))
+      .map((line) => line.text || "")
+      .join("\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && isLikelyOcrTextLine(line))
+      .join("\n")
+      .replace(/[ \t]+/g, " ")
+      .slice(0, 900);
+  }
+
+  function isLikelyHorizontalOcrLine(line) {
+    const text = cleanText(line && line.text, 80);
+    if (!text) {
+      return false;
+    }
+    const box = line && line.bbox ? line.bbox : {};
+    const width = Math.max(0, Number(box.x1) - Number(box.x0));
+    const height = Math.max(0, Number(box.y1) - Number(box.y0));
+    if (!width || !height) {
+      return true;
+    }
+    const compact = text.replace(/\s/g, "");
+    const verticalShape = height > width * 1.45 && compact.length >= 3;
+    const stackedChars = compact.length >= 3 && width / Math.max(1, compact.length) < height * 0.45;
+    return !(verticalShape || stackedChars);
+  }
+
   function cleanOcrText(value) {
     return String(value || "")
       .replace(/\r/g, "\n")
@@ -1839,7 +1965,7 @@
     const searchPlan = buildPlaceSearchQueries(location, event);
     const proximity = getPlaceSearchProximity(event);
     const directCoordinates = parseCoordinatesFromText(location);
-    if (directCoordinates) {
+    if (directCoordinates && !(event && event.fromOcr)) {
       return [makeCoordinatePlaceIntel(location, directCoordinates, event, searchPlan)];
     }
     const results = [];
@@ -3300,6 +3426,9 @@
     if (!event || !hasRouteTargets(event) || placeLookupIds.has(event.id)) {
       return;
     }
+    if (event.fromOcr || event.placePending || event.stopsPending) {
+      return;
+    }
     placeLookupIds.add(event.id);
     try {
       const knownPlaces = [];
@@ -3338,7 +3467,9 @@
     const knownPlaces = [];
     if (event.location && (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon))) {
       setRouteStatus(`${event.location} の座標を調べています。`);
-      place = await fetchPlaceIntel(event.location, event);
+      place = (event.fromOcr || event.placePending)
+        ? await confirmPlaceCandidate(event.location, event)
+        : await fetchPlaceIntel(event.location, event);
     }
     if (hasUsablePlace(place)) {
       knownPlaces.push(place);
@@ -3348,7 +3479,10 @@
       let stopPlace = stop.place;
       if (!stopPlace || !Number.isFinite(stopPlace.lat) || !Number.isFinite(stopPlace.lon)) {
         setRouteStatus(`${stop.location} の座標を調べています。`);
-        stopPlace = await fetchPlaceIntel(stop.location, { ...event, place, proximityPlaces: knownPlaces });
+        const contextEvent = { ...event, place, proximityPlaces: knownPlaces };
+        stopPlace = (event.fromOcr || stop.placePending)
+          ? await confirmPlaceCandidate(stop.location, contextEvent)
+          : await fetchPlaceIntel(stop.location, contextEvent);
       }
       if (hasUsablePlace(stopPlace)) {
         knownPlaces.push(stopPlace);
