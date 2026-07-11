@@ -2961,6 +2961,8 @@
       end,
       location,
       travelMinutes,
+      inferredDate: false,
+      inferredTime: false,
       place: locationChanged ? null : target.place,
       placePending: Boolean(location && locationChanged),
       updatedAt: new Date().toISOString(),
@@ -2984,7 +2986,7 @@
     activeRouteEventId = "";
     renderRouteList([]);
     render();
-    setRouteStatus("予定を編集しました。場所を変えた場合は候補を探し直します。");
+    setRouteStatus(target.inferredTime ? "時刻を設定しました。スケジュール表にも反映しました。" : "予定を編集しました。場所を変えた場合は候補を探し直します。");
   }
 
   function promptClean(label, currentValue, maxLength) {
