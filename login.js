@@ -28,6 +28,7 @@
     azure: "Microsoft",
     facebook: "Instagram/Meta",
   };
+  const enabledOAuthProviders = new Set();
 
   init().catch((error) => {
     setStatus(`ログイン画面の準備中にエラーが出ました: ${getErrorText(error)}`, "error");
@@ -64,6 +65,7 @@
     oauthButtons.forEach((button) => {
       button.addEventListener("click", () => loginWithOAuth(button.dataset.loginOauth));
     });
+    await refreshOAuthProviderAvailability();
 
     if (client) {
       client.auth.getSession().then(({ data }) => {
@@ -203,6 +205,10 @@
       setStatus("このログイン方法には対応していません。", "error");
       return;
     }
+    if (!enabledOAuthProviders.has(provider)) {
+      setStatus(`${providerLabels[provider]}ログインはSupabase側でまだ有効化されていません。メールアドレス登録かおためしを使ってください。`, "warning");
+      return;
+    }
 
     setStatus(`${providerLabels[provider]}ログインへ移動します。`);
     let error = null;
@@ -228,6 +234,61 @@
     localStorage.removeItem(`${STORAGE_KEY}:test`);
     setStatus("おためし版を開きます。", "success");
     window.location.href = "app.html";
+  }
+
+  async function refreshOAuthProviderAvailability() {
+    oauthButtons.forEach((button) => {
+      button.disabled = true;
+      button.dataset.providerState = "checking";
+      button.title = "ログイン方法を確認しています";
+    });
+    if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) {
+      markOAuthProvidersUnavailable();
+      return;
+    }
+    try {
+      const response = await fetch(`${CONFIG.supabaseUrl.replace(/\/+$/, "")}/auth/v1/settings`, {
+        headers: { apikey: CONFIG.supabaseAnonKey },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const settings = await response.json();
+      const external = settings && settings.external ? settings.external : {};
+      let hasEnabledProvider = false;
+      oauthButtons.forEach((button) => {
+        const provider = button.dataset.loginOauth;
+        const isEnabled = Boolean(external[provider]);
+        hasEnabledProvider = hasEnabledProvider || isEnabled;
+        button.disabled = !isEnabled;
+        button.dataset.providerState = isEnabled ? "enabled" : "disabled";
+        button.title = isEnabled
+          ? `${providerLabels[provider]}でログイン`
+          : `${providerLabels[provider]}ログインはSupabase側で未設定です`;
+        if (isEnabled) {
+          enabledOAuthProviders.add(provider);
+        } else {
+          enabledOAuthProviders.delete(provider);
+        }
+      });
+      if (!hasEnabledProvider) {
+        setStatus("外部アカウントログインはSupabase側でまだ未設定です。メールアドレス登録かおためしは使えます。", "warning");
+      }
+    } catch (error) {
+      markOAuthProvidersUnavailable();
+      setStatus(`外部ログイン設定を確認できませんでした: ${getErrorText(error)} メールアドレス登録かおためしは使えます。`, "warning");
+    }
+  }
+
+  function markOAuthProvidersUnavailable() {
+    enabledOAuthProviders.clear();
+    oauthButtons.forEach((button) => {
+      const provider = button.dataset.loginOauth;
+      button.disabled = true;
+      button.dataset.providerState = "disabled";
+      button.title = `${providerLabels[provider]}ログインはSupabase側で未設定です`;
+    });
   }
 
   async function saveSupabaseSettings() {
