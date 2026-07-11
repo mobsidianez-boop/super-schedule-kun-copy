@@ -18,6 +18,7 @@
   const plannerAuthPassword = document.querySelector("#planner-auth-password");
   const plannerSignupButton = document.querySelector("#planner-signup-button");
   const plannerResendButton = document.querySelector("#planner-resend-button");
+  const plannerOauthButtons = document.querySelectorAll("[data-planner-oauth]");
   const plannerAccessCode = document.querySelector("#planner-access-code");
   const plannerCodeButton = document.querySelector("#planner-code-button");
   const plannerDemoButton = document.querySelector("#planner-demo-button");
@@ -216,6 +217,10 @@
     plannerResendButton.addEventListener("click", resendPlannerConfirmation);
   }
 
+  plannerOauthButtons.forEach((button) => {
+    button.addEventListener("click", () => loginPlannerWithOAuth(button.dataset.plannerOauth));
+  });
+
   if (plannerCodeButton) {
     plannerCodeButton.addEventListener("click", unlockWithCode);
   }
@@ -407,6 +412,43 @@
     }
     if (data && data.session) {
       unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
+    }
+  }
+
+  async function loginPlannerWithOAuth(provider) {
+    if (!plannerSupabase) {
+      setPlannerAuthStatus("Supabase接続設定が必要です。Project URLと公開キーを保存してから試してください。", "error");
+      animateGate("gate-shake");
+      return;
+    }
+    const providerLabels = {
+      google: "Google",
+      twitter: "X",
+      azure: "Microsoft",
+      facebook: "Instagram/Meta",
+    };
+    if (!providerLabels[provider]) {
+      setPlannerAuthStatus("このログイン方法には対応していません。", "error");
+      animateGate("gate-shake");
+      return;
+    }
+
+    setPlannerAuthStatus(`${providerLabels[provider]}ログインへ移動します。`);
+    try {
+      const { error } = await plannerSupabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: CONFIG.authRedirectUrl || window.location.href,
+          queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+        },
+      });
+      if (error) {
+        setPlannerAuthStatus(`${providerLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
+        animateGate("gate-shake");
+      }
+    } catch (error) {
+      setPlannerAuthStatus(`${providerLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
+      animateGate("gate-shake");
     }
   }
 

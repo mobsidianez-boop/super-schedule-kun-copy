@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん アプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=email-auth-config-1">
+  <link rel="stylesheet" href="style.css?v=oauth-providers-1">
 </head>
 <body class="app-mode">
   <header class="header">
@@ -105,6 +105,12 @@
             <button class="button primary" type="submit">ログイン</button>
             <button class="button" type="button" id="planner-signup-button">新規登録</button>
             <button class="button" type="button" id="planner-resend-button">確認メールを再送</button>
+          </div>
+          <div class="oauth-actions" aria-label="外部アカウントでログイン">
+            <button class="button" type="button" data-planner-oauth="google">Googleで続ける</button>
+            <button class="button" type="button" data-planner-oauth="twitter">Xで続ける</button>
+            <button class="button" type="button" data-planner-oauth="azure">Microsoftで続ける</button>
+            <button class="button" type="button" data-planner-oauth="facebook">Instagram/Metaで続ける</button>
           </div>
         </form>
         <div class="planner-code-row">
@@ -399,7 +405,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=email-auth-config-1"></script>
+  <script src="planner.js?v=oauth-providers-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
