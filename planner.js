@@ -1261,9 +1261,7 @@
     if (isBadLocationCandidate(location)) {
       return null;
     }
-    const note = cleanText(location ? rest.replace(location, "") : rest, 48)
-      .replace(/^[\s、。・:：-]+/, "")
-      .replace(/^(で|にて|に|へ|での)\s*/, "");
+    const note = buildReadableStopTitle(rest, location);
     if (!location) {
       return null;
     }
@@ -1282,6 +1280,26 @@
     return getEventStops(stops)
       .map((stop) => [stop.time, stop.routeMode && stop.routeMode !== "auto" ? `[${getRouteModeLabel(stop.routeMode)}]` : "", stop.location, stop.title].filter(Boolean).join(" "))
       .join("\n");
+  }
+
+  function buildReadableStopTitle(rest, location) {
+    const original = cleanText(rest, 48)
+      .replace(/^[\s、。・:：-]+/, "")
+      .trim();
+    if (!original) {
+      return "";
+    }
+    const withoutLocation = cleanText(location ? original.replace(location, "") : original, 48)
+      .replace(/^[\s、。・:：-]+/, "")
+      .replace(/^(で|にて|に|へ|での)\s*/, "")
+      .trim();
+    if (!withoutLocation || isBareTravelTitle(withoutLocation) || withoutLocation.length <= 2) {
+      return original;
+    }
+    if (/(観光|見学|食事|ランチ|カフェ|買い物|チェックイン|チェックアウト|集合|出発|到着|散策|体験|イベント|ライブ|参拝|休憩)/.test(withoutLocation)) {
+      return withoutLocation;
+    }
+    return original;
   }
 
   function mergeEditedStops(event, nextStops) {
@@ -3585,7 +3603,7 @@
   function detectTitle(text, location) {
     const withoutDate = stripDateTime(text)
       .replace(/月曜|火曜|水曜|木曜|金曜|土曜|日曜|[月火水木金土日]曜日/g, "")
-      .replace(location, "")
+      .replace(shouldRemoveLocationFromTitle(text, location) ? location : "", "")
       .replace(/場所[:：]?|会場[:：]?|集合場所[:：]?|行き先[:：]?/g, "")
       .replace(/で|にて|集合|予定|予約|から|まで/g, " ")
       .replace(/^(の|に|を|が|は)+/, "")
@@ -3600,6 +3618,30 @@
       return cleanText(`${location}に行く`, 48);
     }
     return cleanText(eventWord ? eventWord[1] : withoutDate, 48);
+  }
+
+  function shouldRemoveLocationFromTitle(text, location) {
+    const cleanedLocation = cleanLocation(location);
+    if (!cleanedLocation) {
+      return false;
+    }
+    const source = cleanText(normalizeScheduleText(text), 120);
+    const removed = stripDateTime(source)
+      .replace(cleanedLocation, "")
+      .replace(/場所[:：]?|会場[:：]?|集合場所[:：]?|行き先[:：]?/g, "")
+      .replace(/で|にて|集合|予定|予約|から|まで/g, " ")
+      .replace(/^(の|に|を|が|は)+/, "")
+      .replace(/をする|する|開催/g, " ")
+      .replace(/[、。]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!removed || isBareTravelTitle(removed) || removed.length <= 2) {
+      return false;
+    }
+    if (isTravelSource(source, cleanedLocation)) {
+      return false;
+    }
+    return /(誕生日|パーティー|会議|打ち合わせ|ミーティング|面談|面接|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/.test(removed);
   }
 
   function normalizeDetectedTitle(title, location, sourceText = "") {
