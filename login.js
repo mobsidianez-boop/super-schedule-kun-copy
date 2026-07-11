@@ -8,9 +8,7 @@
   const CONFIG = { ...loadSavedSupabaseConfig(), ...DEFAULT_CONFIG };
   const APP_URL = new URL("app.html", window.location.href).href;
   const authRedirectUrl = CONFIG.authRedirectUrl || APP_URL;
-  const client = window.supabase && CONFIG.supabaseUrl && CONFIG.supabaseAnonKey
-    ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
-    : null;
+  let client = null;
 
   const form = document.querySelector("#login-auth-form");
   const emailInput = document.querySelector("#login-auth-email");
@@ -33,7 +31,9 @@
 
   init();
 
-  function init() {
+  async function init() {
+    client = await getSupabaseClient();
+
     if (supabaseUrlInput) {
       supabaseUrlInput.value = CONFIG.supabaseUrl || "";
     }
@@ -75,6 +75,23 @@
     } else {
       setStatus("ログイン機能の接続準備ができていません。おためしはこのまま使えます。", "warning");
     }
+  }
+
+  async function getSupabaseClient() {
+    if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) {
+      return null;
+    }
+    for (let index = 0; index < 30; index += 1) {
+      if (window.supabase && typeof window.supabase.createClient === "function") {
+        return window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+      }
+      await delay(100);
+    }
+    return null;
+  }
+
+  function delay(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
   }
 
   async function loginWithPassword() {
