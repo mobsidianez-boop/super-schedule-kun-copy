@@ -29,7 +29,9 @@
     facebook: "Instagram/Meta",
   };
 
-  init();
+  init().catch((error) => {
+    setStatus(`ログイン画面の準備中にエラーが出ました: ${getErrorText(error)}`, "error");
+  });
 
   async function init() {
     client = await getSupabaseClient();
@@ -71,6 +73,8 @@
             window.location.href = "app.html";
           }, 450);
         }
+      }).catch((error) => {
+        setStatus(`ログイン状態を確認できませんでした: ${getErrorText(error)}`, "warning");
       });
     } else {
       setStatus("ログイン機能の接続準備ができていません。おためしはこのまま使えます。", "warning");
@@ -107,7 +111,13 @@
     }
 
     setStatus("ログインしています。");
-    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    let data = null;
+    let error = null;
+    try {
+      ({ data, error } = await client.auth.signInWithPassword({ email, password }));
+    } catch (caughtError) {
+      error = caughtError;
+    }
     if (error) {
       setStatus(`ログインできませんでした: ${getErrorText(error)}`, "error");
       return;
@@ -134,11 +144,17 @@
     }
 
     setStatus("登録しています。");
-    const { data, error } = await client.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: authRedirectUrl },
-    });
+    let data = null;
+    let error = null;
+    try {
+      ({ data, error } = await client.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: authRedirectUrl },
+      }));
+    } catch (caughtError) {
+      error = caughtError;
+    }
     if (error) {
       setStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
       return;
@@ -161,11 +177,16 @@
     }
 
     setStatus("確認メールを再送しています。");
-    const { error } = await client.auth.resend({
-      type: "signup",
-      email,
-      options: { emailRedirectTo: authRedirectUrl },
-    });
+    let error = null;
+    try {
+      ({ error } = await client.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: authRedirectUrl },
+      }));
+    } catch (caughtError) {
+      error = caughtError;
+    }
     if (error) {
       setStatus(`確認メールを送れませんでした: ${getErrorText(error)}`, "error");
       return;
@@ -184,13 +205,18 @@
     }
 
     setStatus(`${providerLabels[provider]}ログインへ移動します。`);
-    const { error } = await client.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: authRedirectUrl,
-        queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
-      },
-    });
+    let error = null;
+    try {
+      ({ error } = await client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: authRedirectUrl,
+          queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+        },
+      }));
+    } catch (caughtError) {
+      error = caughtError;
+    }
     if (error) {
       setStatus(`${providerLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
     }
