@@ -1309,7 +1309,7 @@
   }
 
   function hasDateSignal(text) {
-    return /(20\d{2}[\/.\-年]\d{1,2}[\/.\-月]\d{1,2}日?|\d{1,2}[\/.\-]\d{1,2}|\d{1,2}月\d{1,2}日|今日|きょう|明日|あした|明後日|あさって|月曜|火曜|水曜|木曜|金曜|土曜|日曜)/.test(text);
+    return /(20\d{2}\s*[\/.\-年]\s*\d{1,2}\s*[\/.\-月]\s*\d{1,2}日?|\d{1,2}\s*[\/.\-]\s*\d{1,2}|\d{1,2}\s*月\s*\d{1,2}(?:\s*日)?|今日|きょう|明日|あした|明後日|あさって|月曜|火曜|水曜|木曜|金曜|土曜|日曜)/.test(text);
   }
 
   function hasTimeSignal(text) {
@@ -2785,7 +2785,7 @@
   }
 
   function detectDate(text, base) {
-    const ymd = text.match(/(20\d{2})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/);
+    const ymd = text.match(/(20\d{2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*(\d{1,2})/);
     if (ymd) {
       return toDateInputValue(new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])));
     }
@@ -2795,7 +2795,7 @@
       return toDateInputValue(new Date(Number(ymdJapanese[1]), Number(ymdJapanese[2]) - 1, Number(ymdJapanese[3])));
     }
 
-    const md = text.match(/(?:^|[^\d])(\d{1,2})[\/.\-](\d{1,2})(?:[^\d]|$)/);
+    const md = text.match(/(?:^|[^\d])(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:[^\d]|$)/);
     if (md) {
       const month = Number(md[1]);
       const day = Number(md[2]);
@@ -2803,7 +2803,7 @@
       return toDateInputValue(new Date(year, month - 1, day));
     }
 
-    const japaneseDate = text.match(/(\d{1,2})月(\d{1,2})日/);
+    const japaneseDate = text.match(/(\d{1,2})\s*月\s*(\d{1,2})(?:\s*日)?/);
     if (japaneseDate) {
       return toDateInputValue(new Date(base.getFullYear(), Number(japaneseDate[1]) - 1, Number(japaneseDate[2])));
     }
