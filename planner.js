@@ -74,6 +74,7 @@
   let plannerCloudWarningShown = false;
   let cloudSyncTimer = null;
   let cloudSyncInFlight = false;
+  let candidateAddInFlight = false;
   let lastDetectMessage = "";
   const notificationTimers = new Map();
   let plannerMap = null;
@@ -195,10 +196,24 @@
     if (!ensurePlannerAccess()) {
       return;
     }
-    if (!detectedCandidate) {
+    if (!detectedCandidate || candidateAddInFlight) {
       return;
     }
+    candidateAddInFlight = true;
+    if (candidateAddButton) {
+      candidateAddButton.disabled = true;
+    }
     const permissionPromise = plannerStorageMode === "test" ? Promise.resolve("test") : prepareNotificationPermission();
+    const candidateSignature = getEventSignature(detectedCandidate);
+    const alreadyExists = events.some((item) => getEventSignature(item) === candidateSignature);
+    if (alreadyExists) {
+      setDetectMessage("同じ予定がすでに登録されています。二重登録はしませんでした。");
+      candidateAddInFlight = false;
+      if (candidateAddButton) {
+        candidateAddButton.disabled = false;
+      }
+      return;
+    }
     const nextEvent = { ...detectedCandidate, id: createId(), createdAt: new Date().toISOString() };
     events = [nextEvent, ...events];
     animatedEventId = nextEvent.id;
@@ -212,6 +227,10 @@
     detectText.value = "";
     detectedCandidate = null;
     candidateBox.hidden = true;
+    candidateAddInFlight = false;
+    if (candidateAddButton) {
+      candidateAddButton.disabled = false;
+    }
     render();
   }
 
@@ -3476,9 +3495,11 @@
       actions.className = "event-actions";
       const routeButton = createSmallButton("地図", () => showEventRouteDetails(event.id));
       routeButton.disabled = !hasRouteTargets(event);
+      const overviewRouteButton = createSmallButton("全体ルート", () => showEventFullRoute(event.id));
+      overviewRouteButton.disabled = getEventRouteTargets(event).length < 2;
       const editButton = createSmallButton("編集", () => editEvent(event.id));
       const deleteButton = createSmallButton("削除", () => deleteEvent(event.id));
-      actions.append(routeButton, editButton, deleteButton);
+      actions.append(routeButton, overviewRouteButton, editButton, deleteButton);
       if (event.id === animatedEventId) {
         item.classList.add("just-added");
       }
@@ -4194,6 +4215,21 @@
       return window.crypto.randomUUID();
     }
     return `event-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function getEventSignature(event) {
+    const stops = getEventStops(event)
+      .map((stop) => `${stop.time}|${stop.location}|${stop.title}`)
+      .sort()
+      .join(";");
+    return [
+      cleanText(event && event.title, 48),
+      event && event.date || "",
+      event && event.start || "",
+      event && event.end || "",
+      cleanLocation(event && event.location || ""),
+      stops,
+    ].join("::");
   }
 
   function showSummary(text) {
