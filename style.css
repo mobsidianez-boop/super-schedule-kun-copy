@@ -21,12 +21,46 @@
 }
 
 body {
+  position: relative;
   margin: 0;
   color: var(--ink);
-  background: var(--paper);
+  background:
+    linear-gradient(120deg, rgba(88, 166, 255, 0.08), rgba(255, 92, 138, 0.07) 44%, rgba(255, 207, 92, 0.08)),
+    var(--paper);
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
   font-size: 18px;
   line-height: 1.85;
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -28%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+body::before {
+  background:
+    conic-gradient(from 18deg, transparent 0 8%, rgba(255, 255, 255, 0.62) 12%, transparent 20% 100%),
+    repeating-linear-gradient(102deg, transparent 0 42px, rgba(112, 71, 235, 0.05) 43px 44px);
+  opacity: 0.46;
+  animation: ambientSkyShift 34s linear infinite;
+}
+
+body::after {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.78) 0 1px, transparent 2px) 0 0 / 54px 54px,
+    radial-gradient(circle, rgba(255, 207, 92, 0.32) 0 1px, transparent 2px) 18px 24px / 86px 86px;
+  opacity: 0.42;
+  animation: ambientSparkleDrift 24s linear infinite;
 }
 
 .landing-mode .planner,
@@ -73,6 +107,16 @@ a {
   background: rgba(251, 247, 255, 0.88);
   border-bottom: 1px solid rgba(231, 220, 255, 0.94);
   backdrop-filter: blur(14px);
+}
+
+.header::after {
+  content: "";
+  position: absolute;
+  inset: auto 6vw -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(112, 71, 235, 0.36), rgba(255, 92, 138, 0.3), transparent);
+  background-size: 220% 100%;
+  animation: ambientLineFlow 7s linear infinite;
 }
 
 .logo {
@@ -252,8 +296,15 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.88);
+  background-size: 220% 220%;
   font-size: 18px;
   font-weight: 900;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-position 220ms ease, background-color 160ms ease;
+}
+
+.button:hover,
+.button:focus-visible {
+  background-position: 100% 50%;
 }
 
 .button.action-pop,
@@ -266,9 +317,11 @@ h3 {
 
 .button.primary {
   color: #ffffff;
-  background: var(--teal);
+  background: linear-gradient(135deg, var(--teal), #58a6ff 52%, var(--warm));
+  background-size: 220% 220%;
   border-color: var(--teal);
   box-shadow: 0 16px 28px rgba(112, 71, 235, 0.24);
+  animation: ambientButtonGlow 4.8s ease-in-out infinite;
 }
 
 .phone {
@@ -900,7 +953,31 @@ h3 {
 }
 
 .planner {
-  background: rgba(255, 255, 255, 0.62);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(240, 234, 255, 0.5)),
+    rgba(255, 255, 255, 0.62);
+}
+
+.planner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 38%, rgba(255, 255, 255, 0.54) 48%, transparent 58% 100%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 72px);
+  transform: translateX(-70%);
+  opacity: 0.42;
+  animation: ambientPanelSweep 9.5s ease-in-out infinite;
+}
+
+.planner > * {
+  position: relative;
+  z-index: 1;
 }
 
 .planner-layout {
@@ -915,10 +992,48 @@ h3 {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: var(--soft-shadow);
+  backdrop-filter: blur(18px) saturate(1.1);
 }
 
 .planner-panel {
   padding: 22px;
+}
+
+.planner-panel,
+.planner-board,
+.auth-panel,
+.card,
+.board-panel,
+.timeline,
+.mini-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.planner-panel::after,
+.planner-board::after,
+.auth-panel::after,
+.card::after,
+.board-panel::after,
+.timeline::after,
+.mini-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 0 42%, rgba(255, 255, 255, 0.58) 48%, transparent 56% 100%);
+  transform: translateX(-130%);
+  opacity: 0;
+}
+
+.planner-panel:hover::after,
+.planner-board:hover::after,
+.auth-panel:hover::after,
+.card:hover::after,
+.board-panel:hover::after,
+.timeline:hover::after,
+.mini-card:hover::after {
+  animation: ambientCardSweep 900ms ease both;
 }
 
 .planner-gate {
@@ -1646,6 +1761,61 @@ h3 {
   }
 }
 
+@keyframes ambientSkyShift {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ambientSparkleDrift {
+  to {
+    transform: translate3d(82px, 58px, 0);
+  }
+}
+
+@keyframes ambientLineFlow {
+  to {
+    background-position: 220% 50%;
+  }
+}
+
+@keyframes ambientPanelSweep {
+  0%,
+  42% {
+    transform: translateX(-70%);
+  }
+  72%,
+  100% {
+    transform: translateX(70%);
+  }
+}
+
+@keyframes ambientCardSweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-130%);
+  }
+  28% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(130%);
+  }
+}
+
+@keyframes ambientButtonGlow {
+  0%,
+  100% {
+    background-position: 0% 50%;
+    box-shadow: 0 16px 28px rgba(112, 71, 235, 0.24);
+  }
+  50% {
+    background-position: 100% 50%;
+    box-shadow: 0 18px 34px rgba(88, 166, 255, 0.26), 0 0 22px rgba(255, 92, 138, 0.16);
+  }
+}
+
 @keyframes gateShake {
   0%,
   100% {
@@ -1728,6 +1898,16 @@ h3 {
   }
   50% {
     transform: translateX(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -2251,6 +2431,21 @@ footer {
 @media (max-width: 680px) {
   body {
     font-size: 17px;
+  }
+
+  body::before {
+    opacity: 0.24;
+    animation-duration: 48s;
+  }
+
+  body::after {
+    opacity: 0.2;
+    background-size: 78px 78px, 112px 112px;
+  }
+
+  .planner::before {
+    opacity: 0.24;
+    animation-duration: 14s;
   }
 
   .header {
