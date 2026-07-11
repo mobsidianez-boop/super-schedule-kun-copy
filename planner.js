@@ -1863,6 +1863,18 @@
       });
   }
 
+  function getDayRouteTargets(dayEvents) {
+    return dayEvents
+      .flatMap((event, eventIndex) => getSortedEventRouteTargets(event).map((target, targetIndex) => ({
+        ...target,
+        eventOrder: eventIndex,
+        targetOrder: targetIndex,
+        sortMinutes: target.time ? timeToMinutes(target.time) : (event.start ? timeToMinutes(event.start) : 24 * 60),
+      })))
+      .filter((target) => target.location)
+      .sort((a, b) => a.sortMinutes - b.sortMinutes || a.eventOrder - b.eventOrder || a.targetOrder - b.targetOrder);
+  }
+
   function hasRouteTargets(event) {
     return getEventRouteTargets(event).some((target) => target.location);
   }
@@ -2094,7 +2106,7 @@
   }
 
   async function handleRouteLookup() {
-    const dayEvents = getActiveEvents().filter((item) => hasRouteTargets(item));
+    const dayEvents = getSelectedDayEvents().filter((item) => hasRouteTargets(item));
     if (!navigator.geolocation) {
       setRouteStatus("このブラウザは現在地取得に対応していません。");
       return;
@@ -2126,45 +2138,55 @@
 
       for (const event of dayEvents) {
         await ensureEventPlaces(event);
-        const storedEvent = events.find((item) => item.id === event.id) || event;
-        for (const target of getEventRouteTargets(storedEvent)) {
-          if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
-            routeResults.push({
-              event: storedEvent,
-              target,
-              status: "座標を取得できませんでした。",
-            });
-            continue;
-          }
-
-          try {
-            setRouteStatus(`${target.location} への移動時間を調べています。`);
-            const route = await fetchRouteEstimate(current, target.place, storedEvent);
-            routeResults.push({ event: storedEvent, target, route });
-            drawEventRoute(target, route, true);
-          } catch (error) {
-            routeResults.push({
-              event: storedEvent,
-              target,
-              status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
-            });
-            drawEventRoute(target, null, true);
-          }
-        }
       }
 
       saveEvents();
       render();
       clearRouteAndEventLayers();
-      routeResults.forEach(({ target, route }) => {
-        if (target && target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon)) {
-          drawEventRoute(target, route || null);
+      updateCurrentPositionMarker(current);
+      const updatedDayEvents = getSelectedDayEvents().filter((item) => hasRouteTargets(item));
+      const orderedTargets = getDayRouteTargets(updatedDayEvents);
+      orderedTargets.forEach(drawSchedulePlaceMarker);
+
+      let previous = {
+        title: "現在地",
+        location: "現在地",
+        place: current,
+      };
+      for (const target of orderedTargets) {
+        if (!target.place || !Number.isFinite(target.place.lat) || !Number.isFinite(target.place.lon)) {
+          routeResults.push({
+            event: target.event,
+            target,
+            fromLabel: previous.title,
+            status: "座標を取得できませんでした。",
+          });
+          continue;
         }
-      });
-      [...new Map(routeResults.map(({ event }) => [event.id, event])).values()].forEach(drawEventSequence);
+
+        try {
+          setRouteStatus(`${previous.title} から ${target.location} への道路ルートを調べています。`);
+          const route = await fetchRouteEstimate(previous.place, target.place, target.event);
+          routeResults.push({ event: target.event, target, route, fromLabel: previous.title });
+          drawRouteLine(target, route);
+        } catch (error) {
+          routeResults.push({
+            event: target.event,
+            target,
+            fromLabel: previous.title,
+            status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
+          });
+        }
+        previous = {
+          title: target.time ? `${target.time} ${target.title}` : target.title,
+          location: target.location,
+          place: target.place,
+        };
+      }
+
       renderRouteList(routeResults);
       fitMapToContent(current, routeResults);
-      setRouteStatus("現在地から予定場所への移動時間を表示しています。各予定をタッチすると個別ルートに切り替わります。");
+      setRouteStatus("表示日の目的地を予定順に道路ルートで結びました。各区間の移動時間を下に表示しています。");
     } catch (error) {
       setRouteStatus(`移動時間を調べられませんでした: ${getErrorText(error)}`);
     } finally {
@@ -2541,6 +2563,17 @@
     }
   }
 
+  function drawRouteLine(target, route) {
+    if (!route || !route.geometry) {
+      return;
+    }
+    const line = window.L.geoJSON(route.geometry, {
+      style: { color: getEventColor(target.eventId), weight: 5, opacity: 0.78 },
+    }).addTo(plannerMap);
+    routeLines.push(line);
+    drawTrafficSegments(route);
+  }
+
   function drawTrafficSegments(route) {
     const coordinates = route && route.geometry && Array.isArray(route.geometry.coordinates)
       ? route.geometry.coordinates
@@ -2590,19 +2623,8 @@
   }
 
   function drawEventSequence(event) {
-    const targets = getSortedEventRouteTargets(event)
-      .filter((target) => target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon));
-    if (targets.length < 2) {
-      return;
-    }
-    const color = getEventColor(event.id);
-    const line = window.L.polyline(targets.map((target) => [target.place.lat, target.place.lon]), {
-      color,
-      weight: 4,
-      opacity: 0.58,
-      dashArray: "7 8",
-    }).addTo(plannerMap);
-    routeLines.push(line);
+    // Road-following route lines are drawn by handleRouteLookup. Avoid drawing
+    // straight dotted lines because they can be mistaken for usable routes.
   }
 
   function renderScheduleMap(dayEvents, options = {}) {
@@ -2788,7 +2810,7 @@
       return;
     }
 
-    results.forEach(({ event, target, route, status }) => {
+    results.forEach(({ event, target, route, status, fromLabel }) => {
       const routeTarget = target || getEventRouteTargets(event)[0] || {
         id: "main",
         eventId: event.id,
@@ -2809,7 +2831,8 @@
         });
       }
       const title = document.createElement("strong");
-      title.textContent = routeTarget.time ? `${routeTarget.time} ${routeTarget.title}` : routeTarget.title;
+      const targetLabel = routeTarget.time ? `${routeTarget.time} ${routeTarget.title}` : routeTarget.title;
+      title.textContent = fromLabel ? `${fromLabel} → ${targetLabel}` : targetLabel;
       item.append(title);
 
       if (route) {
@@ -3498,6 +3521,7 @@
             `場所: ${stop.location}`,
             false,
             item.id,
+            { stopId: stop.id },
           ));
         });
     });
@@ -3569,7 +3593,7 @@
     });
   }
 
-  function createTimelineRow(time, title, meta, isTravel, eventId = "") {
+  function createTimelineRow(time, title, meta, isTravel, eventId = "", options = {}) {
     const row = document.createElement("div");
     row.className = "timeline-row";
 
@@ -3599,11 +3623,39 @@
       deleteButton.className = "timeline-delete";
       deleteButton.type = "button";
       deleteButton.textContent = "削除";
-      deleteButton.addEventListener("click", () => deleteEvent(eventId));
+      deleteButton.addEventListener("click", () => {
+        if (options.stopId) {
+          deleteEventStop(eventId, options.stopId);
+        } else {
+          deleteEvent(eventId);
+        }
+      });
       item.append(editButton, deleteButton);
     }
     row.append(timeNode, item);
     return row;
+  }
+
+  function deleteEventStop(eventId, stopId) {
+    const target = events.find((item) => item.id === eventId);
+    if (!target) {
+      return;
+    }
+    const stop = getEventStops(target).find((item) => item.id === stopId);
+    if (!stop) {
+      return;
+    }
+    const ok = window.confirm(`「${stop.time ? `${stop.time} ` : ""}${stop.title || stop.location}」だけを削除しますか？`);
+    if (!ok) {
+      return;
+    }
+    events = events.map((item) => item.id === eventId
+      ? { ...item, stops: getEventStops(item).filter((entry) => entry.id !== stopId), updatedAt: new Date().toISOString() }
+      : item);
+    saveEvents();
+    render();
+    renderRouteList([]);
+    setRouteStatus("時刻別の小さな用事を削除しました。必要なら移動時間を調べ直してください。");
   }
 
   function deleteEvent(eventId) {
