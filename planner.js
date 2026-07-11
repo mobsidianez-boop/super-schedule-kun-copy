@@ -1061,24 +1061,36 @@
     }
 
     const base = new Date();
-    const detectedDate = detectDate(scheduleText, base);
+    const detectedDate = detectDate(scheduleText, base) || detectDate(preparedText, base) || detectDate(text, base);
+    const detectedStops = extractScheduleStops(preparedText);
     const detectedRange = detectTimeRange(scheduleText);
-    const detectedStart = detectedRange.start || detectTime(scheduleText);
+    const fallbackRange = detectedRange.start && detectedRange.end ? detectedRange : detectTimeRange(preparedText);
+    const stopTimes = detectedStops
+      .map((stop) => stop.time)
+      .filter(Boolean)
+      .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+    const detectedStart = fallbackRange.start || detectTime(scheduleText) || detectTime(preparedText) || stopTimes[0] || "";
     if (!detectedDate && !detectedStart) {
       setDetectMessage("予定の候補には日付か時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
       return null;
     }
 
-    const start = detectedStart || "10:00";
+    let start = detectedStart || detectVaguePeriodTime(`${scheduleText}\n${preparedText}`) || "10:00";
     const startMinutes = timeToMinutes(start);
-    const end = detectedRange.end || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
+    const lastStopTime = stopTimes[stopTimes.length - 1] || "";
+    const stopBasedEnd = lastStopTime && timeToMinutes(lastStopTime) > startMinutes
+      ? minutesToTime(Math.min(timeToMinutes(lastStopTime) + 60, 23 * 60 + 59))
+      : "";
+    let end = fallbackRange.end || stopBasedEnd || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
+    if (detectedStart && isAmbiguousTimeText(`${scheduleText}\n${preparedText}`, detectedStart)) {
+      ({ start, end } = confirmAmbiguousTimePeriod(start, end));
+    }
     const detectedLocation = detectLocation(scheduleText);
     let title = detectTitle(scheduleText, detectedLocation);
-    const date = resolveDetectedDate(scheduleText, detectedDate, base, start, end);
+    const date = resolveDetectedDate(`${scheduleText}\n${preparedText}`, detectedDate, base, start, end);
     if (!date) {
       return null;
     }
-    const detectedStops = extractScheduleStops(preparedText);
     const location = detectedStops.length ? "" : (detectedLocation || inferLocationFromTitle(title));
     title = normalizeDetectedTitle(title, location, scheduleText);
     if (!title || title === location) {
@@ -1541,6 +1553,7 @@
 
   async function fetchPlaceCandidates(location, event, maxResults = 5) {
     const searchPlan = buildPlaceSearchQueries(location);
+    const proximity = getPlaceSearchProximity(event);
     const directCoordinates = parseCoordinatesFromText(location);
     if (directCoordinates) {
       return [makeCoordinatePlaceIntel(location, directCoordinates, event, searchPlan)];
@@ -1549,7 +1562,7 @@
     const seen = new Set();
 
     for (const query of searchPlan.queries) {
-      const places = await searchPlacesForQuery(query, Math.min(3, Math.max(1, maxResults)));
+      const places = await searchPlacesForQuery(query, Math.min(3, Math.max(1, maxResults)), proximity);
 
       places.forEach((place) => {
         const key = `${place.provider || ""}:${place.osm_type || ""}:${place.osm_id || ""}:${place.lat || ""}:${place.lon || ""}`;
@@ -1557,12 +1570,20 @@
           return;
         }
         seen.add(key);
-        results.push(makePlaceIntel(location, query, place, event, searchPlan));
+        results.push(makePlaceIntel(location, query, place, event, searchPlan, proximity));
       });
 
       if (maxResults <= 1 && results.length >= maxResults) {
         break;
       }
+    }
+
+    if (proximity) {
+      results.sort((a, b) => {
+        const aDistance = Number.isFinite(a.distanceFromAnchorKm) ? a.distanceFromAnchorKm : Number.POSITIVE_INFINITY;
+        const bDistance = Number.isFinite(b.distanceFromAnchorKm) ? b.distanceFromAnchorKm : Number.POSITIVE_INFINITY;
+        return aDistance - bDistance;
+      });
     }
 
     return results.slice(0, maxResults);
@@ -1613,15 +1634,15 @@
     };
   }
 
-  async function searchPlacesForQuery(query, limit) {
-    const nominatim = await fetchNominatimPlaces(query, limit);
+  async function searchPlacesForQuery(query, limit, proximity = null) {
+    const nominatim = await fetchNominatimPlaces(query, limit, proximity);
     if (nominatim.length) {
       return nominatim;
     }
-    return fetchPhotonPlaces(query, limit);
+    return fetchPhotonPlaces(query, limit, proximity);
   }
 
-  async function fetchNominatimPlaces(query, limit) {
+  async function fetchNominatimPlaces(query, limit, proximity = null) {
     try {
       const params = new URLSearchParams({
         format: "jsonv2",
@@ -1631,6 +1652,16 @@
         extratags: "1",
         "accept-language": "ja",
       });
+      if (proximity) {
+        const span = 0.35;
+        params.set("viewbox", [
+          proximity.lon - span,
+          proximity.lat + span,
+          proximity.lon + span,
+          proximity.lat - span,
+        ].join(","));
+        params.set("bounded", "0");
+      }
       const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
       if (!response.ok) {
         return [];
@@ -1642,12 +1673,16 @@
     }
   }
 
-  async function fetchPhotonPlaces(query, limit) {
+  async function fetchPhotonPlaces(query, limit, proximity = null) {
     try {
       const params = new URLSearchParams({
         q: query,
         limit: String(limit),
       });
+      if (proximity) {
+        params.set("lat", String(proximity.lat));
+        params.set("lon", String(proximity.lon));
+      }
       const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`);
       if (!response.ok) {
         return [];
@@ -1682,27 +1717,70 @@
     }
   }
 
-  function makePlaceIntel(originalQuery, searchQuery, place, event, searchPlan) {
+  function makePlaceIntel(originalQuery, searchQuery, place, event, searchPlan, proximity = null) {
     const osmType = String(place.osm_type || "").toLowerCase();
     const osmId = place.osm_id;
     const mapUrl = osmType && osmId
       ? `https://www.openstreetmap.org/${osmType}/${osmId}`
       : `https://www.openstreetmap.org/search?query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`;
 
+    const lat = Number(place.lat);
+    const lon = Number(place.lon);
+    const distanceFromAnchorKm = proximity && Number.isFinite(lat) && Number.isFinite(lon)
+      ? calculateDistanceKm(proximity, { lat, lon })
+      : null;
+
     return {
       query: originalQuery,
       searchQuery,
       searchParts: searchPlan,
       displayName: place.display_name || originalQuery,
-      lat: Number(place.lat),
-      lon: Number(place.lon),
+      lat,
+      lon,
+      distanceFromAnchorKm,
       category: [place.category, place.type].filter(Boolean).join(" / "),
       mapUrl,
       googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`,
       crowd: null,
-      source: `${place.provider || "OpenStreetMap"}の場所情報です。リアルタイム混雑はライブデータAPIが設定された場合だけ表示します。`,
+      source: `${place.provider || "OpenStreetMap"}の場所情報です。${proximity ? "同じ予定内で確定済みの場所の近隣も手がかりにしています。" : ""}リアルタイム混雑はライブデータAPIが設定された場合だけ表示します。`,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  function getPlaceSearchProximity(event) {
+    if (!event) {
+      return null;
+    }
+    if (hasUsablePlace(event.searchProximity)) {
+      return event.searchProximity;
+    }
+    if (Array.isArray(event.proximityPlaces)) {
+      const found = event.proximityPlaces.find(hasUsablePlace);
+      if (found) {
+        return found;
+      }
+    }
+    if (hasUsablePlace(event.place)) {
+      return event.place;
+    }
+    const stopWithPlace = getEventStops(event).find((stop) => hasUsablePlace(stop.place));
+    return stopWithPlace ? stopWithPlace.place : null;
+  }
+
+  function hasUsablePlace(place) {
+    return Boolean(place && Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)));
+  }
+
+  function calculateDistanceKm(from, to) {
+    const earthRadiusKm = 6371;
+    const lat1 = Number(from.lat) * Math.PI / 180;
+    const lat2 = Number(to.lat) * Math.PI / 180;
+    const deltaLat = (Number(to.lat) - Number(from.lat)) * Math.PI / 180;
+    const deltaLon = (Number(to.lon) - Number(from.lon)) * Math.PI / 180;
+    const a = Math.sin(deltaLat / 2) ** 2
+      + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(earthRadiusKm * c * 10) / 10;
   }
 
   function getEventStops(eventOrStops) {
@@ -1776,7 +1854,9 @@
     let query = location;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const searchPlan = buildPlaceSearchQueries(query);
-      setCandidatePlaceStatus(`候補を探しています: ${searchPlan.keyword || query}`);
+      const proximity = getPlaceSearchProximity(event);
+      const proximityText = proximity ? ` / 近隣ヒント: ${proximity.displayName || proximity.query || "確定済みの場所"}` : "";
+      setCandidatePlaceStatus(`候補を探しています: ${searchPlan.keyword || query}${proximityText}`);
       const candidates = await fetchPlaceCandidates(query, event, 5);
 
       for (let index = 0; index < candidates.length; index += 1) {
@@ -1784,7 +1864,10 @@
         renderPlaceIntel(candidate, {
           status: `候補 ${index + 1}/${candidates.length}。違う場合は確認ダイアログでキャンセルしてください。`,
         });
-        const ok = window.confirm(`この場所で合っていますか？\n\n${candidate.displayName}\n\n検索した固有名詞: ${candidate.searchParts.keyword || query}\n住所の手がかり: ${candidate.searchParts.context || "なし"}`);
+        const distanceText = Number.isFinite(candidate.distanceFromAnchorKm)
+          ? `\n近隣ヒントからの距離: 約${candidate.distanceFromAnchorKm}km`
+          : "";
+        const ok = window.confirm(`この場所で合っていますか？\n\n${candidate.displayName}\n\n検索した固有名詞: ${candidate.searchParts.keyword || query}\n住所の手がかり: ${candidate.searchParts.context || "なし"}${distanceText}`);
         if (ok) {
           return candidate;
         }
@@ -1890,10 +1973,22 @@
 
     showSummary("予定を追加しました。場所の座標を調べています。リアルタイム混雑は交通API接続時だけ表示します。");
     try {
-      const place = event.location && event.placePending && !event.place ? await fetchPlaceIntel(event.location, event) : event.place;
+      const knownPlaces = [];
+      const place = event.location && event.placePending && !event.place
+        ? await confirmPlaceCandidate(event.location, event)
+        : event.place;
+      if (hasUsablePlace(place)) {
+        knownPlaces.push(place);
+      }
       const stops = [];
       for (const stop of getEventStops(event)) {
-        const stopPlace = stop.placePending && !stop.place ? await fetchPlaceIntel(stop.location, event) : stop.place;
+        const contextEvent = { ...event, place, proximityPlaces: knownPlaces };
+        const stopPlace = stop.placePending && !stop.place
+          ? await confirmPlaceCandidate(stop.location, contextEvent)
+          : stop.place;
+        if (hasUsablePlace(stopPlace)) {
+          knownPlaces.push(stopPlace);
+        }
         stops.push({ ...stop, place: stopPlace || stop.place || null, placePending: false });
       }
       events = events.map((item) => item.id === event.id
@@ -2539,14 +2634,22 @@
     }
     placeLookupIds.add(event.id);
     try {
+      const knownPlaces = [];
       const place = event.location && (!event.place || !Number.isFinite(event.place.lat) || !Number.isFinite(event.place.lon))
         ? await fetchPlaceIntel(event.location, event)
         : event.place;
+      if (hasUsablePlace(place)) {
+        knownPlaces.push(place);
+      }
       const stops = [];
       for (const stop of getEventStops(event)) {
+        const contextEvent = { ...event, place, proximityPlaces: knownPlaces };
         const stopPlace = !stop.place || !Number.isFinite(stop.place.lat) || !Number.isFinite(stop.place.lon)
-          ? await fetchPlaceIntel(stop.location, event)
+          ? await fetchPlaceIntel(stop.location, contextEvent)
           : stop.place;
+        if (hasUsablePlace(stopPlace)) {
+          knownPlaces.push(stopPlace);
+        }
         stops.push({ ...stop, place: stopPlace, placePending: false });
       }
       events = events.map((item) => item.id === event.id
@@ -2564,16 +2667,23 @@
       return event;
     }
     let place = event.place;
+    const knownPlaces = [];
     if (event.location && (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon))) {
       setRouteStatus(`${event.location} の座標を調べています。`);
       place = await fetchPlaceIntel(event.location, event);
+    }
+    if (hasUsablePlace(place)) {
+      knownPlaces.push(place);
     }
     const stops = [];
     for (const stop of getEventStops(event)) {
       let stopPlace = stop.place;
       if (!stopPlace || !Number.isFinite(stopPlace.lat) || !Number.isFinite(stopPlace.lon)) {
         setRouteStatus(`${stop.location} の座標を調べています。`);
-        stopPlace = await fetchPlaceIntel(stop.location, event);
+        stopPlace = await fetchPlaceIntel(stop.location, { ...event, place, proximityPlaces: knownPlaces });
+      }
+      if (hasUsablePlace(stopPlace)) {
+        knownPlaces.push(stopPlace);
       }
       stops.push({ ...stop, place: stopPlace || null, placePending: false });
     }
@@ -2845,6 +2955,45 @@
     return "";
   }
 
+  function detectVaguePeriodTime(text) {
+    const normalized = normalizeScheduleText(text);
+    if (/午前/.test(normalized)) {
+      return "10:00";
+    }
+    if (/午後/.test(normalized)) {
+      return "14:00";
+    }
+    return "";
+  }
+
+  function isAmbiguousTimeText(text, detectedTime) {
+    const hour = Number(String(detectedTime || "").split(":")[0]);
+    if (!Number.isInteger(hour) || hour < 1 || hour > 11) {
+      return false;
+    }
+    const normalized = normalizeScheduleText(text);
+    if (/午前|午後/.test(normalized)) {
+      return false;
+    }
+    const escapedTime = String(detectedTime || "").replace(/^0/, "");
+    return new RegExp(`(^|[^\\d])0?${hour}(?:[:.]\\d{2}|時)`).test(normalized)
+      || normalized.includes(escapedTime);
+  }
+
+  function confirmAmbiguousTimePeriod(start, end) {
+    const answer = cleanText(window.prompt(`${start} は午前・午後のどちらですか？\n「午前」または「午後」で入力してください。空欄なら午前として扱います。`, "午前"), 8);
+    if (!/^午後$/i.test(answer)) {
+      return { start, end };
+    }
+    const startMinutes = timeToMinutes(start);
+    const endMinutes = timeToMinutes(end);
+    const nextStart = startMinutes < 12 * 60 ? minutesToTime(startMinutes + 12 * 60) : start;
+    const nextEnd = endMinutes <= startMinutes && endMinutes < 12 * 60
+      ? minutesToTime(Math.min(endMinutes + 12 * 60, 23 * 60 + 59))
+      : minutesToTime(Math.min(timeToMinutes(nextStart) + Math.max(30, endMinutes - startMinutes), 23 * 60 + 59));
+    return { start: nextStart, end: nextEnd };
+  }
+
   function detectTimeRange(text) {
     const normalized = normalizeScheduleText(text);
     const japaneseRange = normalized.match(/(午前|午後)?\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?\s*(?:から|〜|～|-|－)\s*(午前|午後)?\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/);
@@ -3065,6 +3214,9 @@
       candidatePlace.append(createTextBlock(`座標目安: ${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`));
     } else {
       candidatePlace.append(createTextBlock("座標目安: 取得できませんでした"));
+    }
+    if (Number.isFinite(place.distanceFromAnchorKm)) {
+      candidatePlace.append(createTextBlock(`確定済みの場所から約${place.distanceFromAnchorKm}km`));
     }
 
     const crowd = place.crowd ? `リアルタイム混雑: ${place.crowd.level}（${place.crowd.reason}）` : "リアルタイム混雑: 未接続";
