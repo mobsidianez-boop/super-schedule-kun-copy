@@ -7,6 +7,7 @@
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
   const EMAIL_SEND_COOLDOWN_MS = 90 * 1000;
+  const EVENT_COLORS = ["#2f80c2", "#f9737f", "#22a78f", "#f59e0b", "#8b6cff", "#e0529c", "#14b8d4", "#64748b"];
   clearSavedSupabaseConfig();
   const CONFIG = { ...loadSavedSupabaseConfig(), ...(window.SUPER_SCHEDULE_CONFIG || {}) };
   let plannerSupabase = null;
@@ -1068,13 +1069,17 @@
       return null;
     }
 
-    const date = detectedDate || toDateInputValue(base);
     const start = detectedStart || "10:00";
     const startMinutes = timeToMinutes(start);
     const end = detectedRange.end || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
     const detectedLocation = detectLocation(scheduleText);
     let title = detectTitle(scheduleText, detectedLocation);
-    const location = detectedLocation || inferLocationFromTitle(title);
+    const date = resolveDetectedDate(scheduleText, detectedDate, base, start, end);
+    if (!date) {
+      return null;
+    }
+    const detectedStops = extractScheduleStops(preparedText);
+    const location = detectedStops.length ? "" : (detectedLocation || inferLocationFromTitle(title));
     title = normalizeDetectedTitle(title, location, scheduleText);
     if (!title || title === location) {
       setDetectMessage("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
@@ -1088,11 +1093,48 @@
       start,
       end,
       location,
+      stops: detectedStops,
       travelMinutes: 0,
       notifyLeadMinutes: 30,
       inferredDate: !detectedDate,
       inferredTime: !detectedStart,
+      stopsPending: detectedStops.length > 0,
     };
+  }
+
+  function resolveDetectedDate(sourceText, detectedDate, base, start, end) {
+    const date = detectedDate || toDateInputValue(base);
+    const ended = isEventEnded({ date, start, end });
+    if (!ended) {
+      return date;
+    }
+    if (!detectedDate || hasExplicitYear(sourceText)) {
+      setDetectMessage("検出した日時はすでに過ぎているため、登録できません。必要なら日付を手入力で直してください。");
+      return "";
+    }
+    const nextYear = base.getFullYear() + 1;
+    const shouldUseFutureYear = window.confirm(`検出した日程は今年（${base.getFullYear()}年）だとすでに過ぎています。来年以降の予定ですか？`);
+    if (!shouldUseFutureYear) {
+      setDetectMessage("今年の日程としてはすでに過ぎているため、登録をキャンセルしました。必要なら日付を手入力で直してください。");
+      return "";
+    }
+    const selectedYear = window.prompt("何年の予定ですか？西暦で入力してください。", String(nextYear));
+    const year = Number(selectedYear);
+    if (!Number.isInteger(year) || year < nextYear || year > nextYear + 10) {
+      setDetectMessage("西暦の入力が正しくなかったため、登録をキャンセルしました。");
+      return "";
+    }
+    const [, month, day] = date.split("-").map(Number);
+    const futureDate = toDateInputValue(new Date(year, month - 1, day));
+    if (isEventEnded({ date: futureDate, start, end })) {
+      setDetectMessage("指定された日時はすでに過ぎているため、登録できません。");
+      return "";
+    }
+    return futureDate;
+  }
+
+  function hasExplicitYear(text) {
+    return /20\d{2}[\/.\-年]/.test(String(text || ""));
   }
 
   function parseStopsInput(value) {
@@ -1101,6 +1143,44 @@
       .map((line) => parseStopLine(line))
       .filter(Boolean)
       .slice(0, 8);
+  }
+
+  function extractScheduleStops(text) {
+    const chunks = splitScheduleTextByTime(text);
+    const stops = [];
+    const seen = new Set();
+    chunks.forEach((chunk) => {
+      const stop = parseStopLine(chunk);
+      if (!stop || !stop.location) {
+        return;
+      }
+      const key = `${stop.time}|${stop.location}|${stop.title}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      stops.push(stop);
+    });
+    return stops.slice(0, 8);
+  }
+
+  function splitScheduleTextByTime(text) {
+    const normalized = normalizeScheduleText(text)
+      .replace(/[。]/g, "。 ")
+      .replace(/[、]/g, "、 ");
+    const timePattern = /(?:午前|午後)?\s*(?:[01]?\d|2[0-3])[:：][0-5]\d|(?:午前|午後)?\s*(?:[01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g;
+    const matches = [...normalized.matchAll(timePattern)];
+    if (matches.length <= 1) {
+      return normalized
+        .split(/[。;\n]/)
+        .map((chunk) => chunk.trim())
+        .filter((chunk) => hasTimeSignal(chunk) && detectLocation(chunk));
+    }
+    return matches.map((match, index) => {
+      const startIndex = match.index || 0;
+      const endIndex = index + 1 < matches.length ? matches[index + 1].index || normalized.length : normalized.length;
+      return normalized.slice(startIndex, endIndex).trim();
+    }).filter(Boolean);
   }
 
   function parseStopLine(line) {
@@ -1112,7 +1192,7 @@
     const time = timeMatch ? (detectTime(timeMatch[0]) || "") : "";
     const rest = cleanText(timeMatch ? normalized.slice(timeMatch[0].length) : normalized, 100)
       .replace(/^[\s、。・:：-]+/, "");
-    const location = cleanLocation(detectLocation(rest) || rest.split(/\s+/)[0] || rest);
+    const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || rest.split(/\s+/)[0] || rest);
     const note = cleanText(location ? rest.replace(location, "") : rest, 48)
       .replace(/^[\s、。・:：-]+/, "")
       .replace(/^(で|にて|に|へ|での)\s*/, "");
@@ -1669,8 +1749,27 @@
     return targets;
   }
 
+  function getSortedEventRouteTargets(event) {
+    return getEventRouteTargets(event)
+      .map((target, index) => ({ ...target, order: index }))
+      .sort((a, b) => {
+        const aTime = a.time ? timeToMinutes(a.time) : 24 * 60 + a.order;
+        const bTime = b.time ? timeToMinutes(b.time) : 24 * 60 + b.order;
+        return aTime - bTime || a.order - b.order;
+      });
+  }
+
   function hasRouteTargets(event) {
     return getEventRouteTargets(event).some((target) => target.location);
+  }
+
+  function getEventColor(eventId) {
+    const text = String(eventId || "");
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+    }
+    return EVENT_COLORS[hash % EVENT_COLORS.length];
   }
 
   async function confirmPlaceCandidate(location, event) {
@@ -1941,6 +2040,7 @@
           drawEventRoute(target, route || null);
         }
       });
+      [...new Map(routeResults.map(({ event }) => [event.id, event])).values()].forEach(drawEventSequence);
       renderRouteList(routeResults);
       fitMapToContent(current, routeResults);
       setRouteStatus("現在地から予定場所への移動時間を表示しています。各予定をタッチすると個別ルートに切り替わります。");
@@ -2300,7 +2400,9 @@
 
   function drawEventRoute(target, route, openPopup = false) {
     const timeLabel = target.time ? `${escapeHtml(target.time)} ` : "";
-    const marker = window.L.marker([target.place.lat, target.place.lon])
+    const marker = window.L.marker([target.place.lat, target.place.lon], {
+      icon: createEventMarkerIcon(target),
+    })
       .addTo(plannerMap)
       .bindPopup(`${timeLabel}${escapeHtml(target.title)}<br>${escapeHtml(target.location || "場所未設定")}<br>タッチで経路を表示`);
     marker.on("click", () => showEventRouteDetails(target.eventId, target.id));
@@ -2311,7 +2413,7 @@
 
     if (route && route.geometry) {
       const line = window.L.geoJSON(route.geometry, {
-        style: { color: "#7047eb", weight: 5, opacity: 0.75 },
+        style: { color: getEventColor(target.eventId), weight: 5, opacity: 0.75 },
       }).addTo(plannerMap);
       routeLines.push(line);
       drawTrafficSegments(route);
@@ -2345,11 +2447,41 @@
       return;
     }
     const timeLabel = target.time ? `${escapeHtml(target.time)} ` : "";
-    const marker = window.L.marker([target.place.lat, target.place.lon])
+    const marker = window.L.marker([target.place.lat, target.place.lon], {
+      icon: createEventMarkerIcon(target),
+    })
       .addTo(plannerMap)
       .bindPopup(`${timeLabel}${escapeHtml(target.title)}<br>${escapeHtml(target.location || "場所未設定")}<br>タッチで経路を表示`);
     marker.on("click", () => showEventRouteDetails(target.eventId, target.id));
     eventMarkers.push(marker);
+  }
+
+  function createEventMarkerIcon(target) {
+    const color = getEventColor(target.eventId);
+    const label = target.time ? target.time.replace(":", "") : "";
+    return window.L.divIcon({
+      className: "event-place-marker-icon",
+      html: `<span class="event-place-marker" style="--event-color:${color}">${escapeHtml(label)}</span>`,
+      iconSize: [34, 42],
+      iconAnchor: [17, 39],
+      popupAnchor: [0, -34],
+    });
+  }
+
+  function drawEventSequence(event) {
+    const targets = getSortedEventRouteTargets(event)
+      .filter((target) => target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon));
+    if (targets.length < 2) {
+      return;
+    }
+    const color = getEventColor(event.id);
+    const line = window.L.polyline(targets.map((target) => [target.place.lat, target.place.lon]), {
+      color,
+      weight: 4,
+      opacity: 0.58,
+      dashArray: "7 8",
+    }).addTo(plannerMap);
+    routeLines.push(line);
   }
 
   function renderScheduleMap(dayEvents, options = {}) {
@@ -2380,6 +2512,7 @@
             needsLookup = true;
           }
         });
+        drawEventSequence(event);
         if (needsLookup) {
           enrichEventPlaceForMap(event);
         }

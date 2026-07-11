@@ -1463,6 +1463,36 @@ h3 {
   background: #ffffff;
 }
 
+.event-place-marker-icon {
+  background: transparent;
+  border: 0;
+}
+
+.event-place-marker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 30px;
+  border: 2px solid #ffffff;
+  border-radius: 999px 999px 999px 4px;
+  background: var(--event-color, #2f80c2);
+  box-shadow: 0 8px 18px rgba(35, 53, 89, 0.24);
+  color: transparent;
+  font-size: 0;
+  font-weight: 950;
+  line-height: 1;
+  transform: rotate(-45deg);
+}
+
+.event-place-marker::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
 .legend-route {
   width: 28px;
   height: 4px;
