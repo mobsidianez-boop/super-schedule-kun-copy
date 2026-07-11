@@ -691,13 +691,14 @@
   }
 
   function detectSchedule(rawText) {
-    const text = cleanText(normalizeScheduleText(rawText), 280);
+    const preparedText = prepareScheduleSource(rawText);
+    const text = cleanText(normalizeScheduleText(preparedText), 420);
     if (!text) {
       setDetectMessage("候補にしたい文章を入力してください。");
       return null;
     }
 
-    const scheduleText = pickScheduleText(text);
+    const scheduleText = pickScheduleText(preparedText);
     if (!scheduleText) {
       setDetectMessage("予定に関する日時や用事が見つかりませんでした。予定が書かれた部分だけを貼り付けてください。");
       return null;
@@ -738,12 +739,67 @@
     };
   }
 
+  function prepareScheduleSource(rawText) {
+    const lines = getUsefulMessageLines(rawText);
+    if (!lines.length) {
+      return cleanOcrText(rawText);
+    }
+
+    const windows = [];
+    lines.forEach((line, index) => {
+      windows.push(line);
+      if (index + 1 < lines.length) {
+        windows.push(`${line} ${lines[index + 1]}`);
+      }
+      if (index + 2 < lines.length) {
+        windows.push(`${line} ${lines[index + 1]} ${lines[index + 2]}`);
+      }
+    });
+
+    const best = windows
+      .map((line) => ({ line, score: scoreScheduleLine(normalizeScheduleText(line)) }))
+      .filter((item) => item.score >= 3)
+      .sort((a, b) => b.score - a.score || a.line.length - b.line.length)[0];
+
+    return best ? best.line : lines.join("\n");
+  }
+
+  function getUsefulMessageLines(rawText) {
+    return String(rawText || "")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map((line) => normalizeMessageLine(line))
+      .filter((line) => line && !isChatNoiseLine(line));
+  }
+
+  function normalizeMessageLine(line) {
+    return String(line || "")
+      .replace(/[|｜]/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s:：・･、。]+|[\s:：・･、。]+$/g, "")
+      .trim();
+  }
+
+  function isChatNoiseLine(line) {
+    const value = normalizeScheduleText(line);
+    if (!value) return true;
+    if (/^(既読|未読|送信中|昨日|今日|明日|写真|画像|動画|スタンプ|アルバム|ノート|通話|不在着信|メッセージを入力|LINE)$/i.test(value)) return true;
+    if (/^(OK|Ok|ok|了解|りょ|うん|はい|よろしく|ありがとう|ありがと|助かる|またね|おつかれ|お疲れ|笑|w|www)$/i.test(value)) return true;
+    if (/^(午前|午後)?\s*\d{1,2}[:：]\d{2}$/.test(value)) return true;
+    if (/^\d{1,2}[:：]\d{2}\s*(既読)?$/.test(value)) return true;
+    if (/^(月|火|水|木|金|土|日|\d{1,2}\/\d{1,2})$/.test(value)) return true;
+    if (/^https?:\/\//i.test(value)) return true;
+    if (/^[^\d]{1,8}$/.test(value) && !hasEventWord(value) && !detectLocation(value)) return true;
+    return false;
+  }
+
   function pickScheduleText(text) {
-    const lines = text
+    const source = prepareScheduleSource(text);
+    const lines = source
       .split(/[\n。！？!?]/)
-      .map((line) => line.trim())
+      .map((line) => normalizeScheduleText(line).trim())
       .filter(Boolean);
-    const candidates = lines.length > 1 ? [text, ...lines] : [text];
+    const candidates = lines.length > 1 ? [normalizeScheduleText(source), ...lines] : [normalizeScheduleText(source)];
 
     const scored = candidates
       .map((line) => ({ line, score: scoreScheduleLine(line) }))
@@ -759,6 +815,9 @@
     if (hasTimeSignal(line)) score += 2;
     if (hasEventWord(line)) score += 2;
     if (detectLocation(line)) score += 1;
+    if (/(行く|いく|行き|集合|集ま|待ち合わせ|予約|開始|から|まで|集合場所|場所|で|に|駅|店|会場|病院|学校|大学|ホテル|カフェ|レストラン|公園|ホール|センター|空港)/.test(line)) score += 1;
+    if (/(既読|未読|スタンプ|写真|画像|動画|アルバム|通話|不在着信|メッセージを入力)/.test(line)) score -= 2;
+    if (/^(午前|午後)?\s*\d{1,2}[:：]\d{2}$/.test(line)) score -= 3;
     if (line.length >= 6 && (hasDateSignal(line) || hasTimeSignal(line))) score += 1;
     if (/よろしく|ありがとう|お疲れ|確認|返信|添付|画像|スクショ/.test(line)) score -= 1;
     return score;
@@ -828,7 +887,8 @@
     setOcrStatus("画像を読み取っています。初回は少し時間がかかります。", 0.02);
 
     try {
-      const result = await window.Tesseract.recognize(file, "jpn+eng", {
+      const ocrSource = await prepareImageForOcr(file);
+      const result = await window.Tesseract.recognize(ocrSource, "jpn+eng", {
         logger(message) {
           if (message.status === "recognizing text") {
             setOcrStatus(`文字を読み取り中 ${Math.round(message.progress * 100)}%`, message.progress);
@@ -917,15 +977,47 @@
     ocrProgress.value = Math.max(0, Math.min(1, Number(progress || 0)));
   }
 
+  async function prepareImageForOcr(file) {
+    if (!window.createImageBitmap || !document.createElement) {
+      return file;
+    }
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(3, Math.max(1.4, 2200 / Math.max(bitmap.width, bitmap.height)));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        return file;
+      }
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let index = 0; index < image.data.length; index += 4) {
+        const gray = image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114;
+        const boosted = gray < 148 ? Math.max(0, gray - 28) : Math.min(255, gray + 24);
+        image.data[index] = boosted;
+        image.data[index + 1] = boosted;
+        image.data[index + 2] = boosted;
+      }
+      context.putImageData(image, 0, 0);
+      return canvas;
+    } catch {
+      return file;
+    }
+  }
+
   function cleanOcrText(value) {
     return String(value || "")
       .replace(/\r/g, "\n")
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .slice(0, 280);
+      .join("\n")
+      .replace(/[ \t]+/g, " ")
+      .slice(0, 900);
   }
 
   function getErrorText(error) {
