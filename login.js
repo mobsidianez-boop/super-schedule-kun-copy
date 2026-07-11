@@ -4,7 +4,8 @@
   const SUPABASE_CONFIG_KEY = "superScheduleKunSupabaseConfig";
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DEFAULT_CONFIG = window.SUPER_SCHEDULE_CONFIG || {};
-  const CONFIG = { ...DEFAULT_CONFIG, ...loadSavedSupabaseConfig() };
+  clearSavedSupabaseConfig();
+  const CONFIG = { ...loadSavedSupabaseConfig(), ...DEFAULT_CONFIG };
   const APP_URL = new URL("app.html", window.location.href).href;
   const authRedirectUrl = CONFIG.authRedirectUrl || APP_URL;
   const client = window.supabase && CONFIG.supabaseUrl && CONFIG.supabaseAnonKey
@@ -227,6 +228,14 @@
       };
     } catch {
       return {};
+    }
+  }
+
+  function clearSavedSupabaseConfig() {
+    try {
+      localStorage.removeItem(SUPABASE_CONFIG_KEY);
+    } catch {
+      // Ignore storage access failures; the bundled app config is enough.
     }
   }
 

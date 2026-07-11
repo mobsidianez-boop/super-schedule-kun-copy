@@ -6,7 +6,8 @@
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
-  const CONFIG = { ...(window.SUPER_SCHEDULE_CONFIG || {}), ...loadSavedSupabaseConfig() };
+  clearSavedSupabaseConfig();
+  const CONFIG = { ...loadSavedSupabaseConfig(), ...(window.SUPER_SCHEDULE_CONFIG || {}) };
   const plannerSupabase = window.supabase && CONFIG.supabaseUrl && CONFIG.supabaseAnonKey
     ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
     : null;
@@ -281,6 +282,14 @@
       };
     } catch {
       return {};
+    }
+  }
+
+  function clearSavedSupabaseConfig() {
+    try {
+      localStorage.removeItem(SUPABASE_CONFIG_KEY);
+    } catch {
+      // Ignore storage access failures; the bundled app config is enough.
     }
   }
 
