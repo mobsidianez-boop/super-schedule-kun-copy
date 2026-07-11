@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=time-edit-fix-1">
+  <link rel="stylesheet" href="style.css?v=realtime-route-1">
 </head>
 <body class="app-mode">
   <header class="header">
@@ -153,8 +153,8 @@
                 <input id="event-location" type="text" maxlength="40" placeholder="例: 渋谷">
               </label>
               <label>
-                <span>移動時間</span>
-                <input id="event-travel" type="number" min="0" max="240" step="5" placeholder="分">
+                <span>通知タイミング</span>
+                <input id="event-travel" type="number" min="0" max="240" step="5" placeholder="開始の何分前">
               </label>
             </div>
             <button class="button primary" type="submit">予定に追加</button>
@@ -191,7 +191,7 @@
             <div class="place-intel" id="candidate-place" hidden></div>
             <button class="button primary" type="button" id="candidate-add-button">この候補を登録</button>
           </div>
-          <p class="planner-note">画像内の文字は、使用中のデバイスから選んだ画像だけをブラウザ内OCRで読み取ります。場所が見つかった場合は確認後に大まかな座標と混雑目安を調べ、予定が近づいたらブラウザ通知します。</p>
+          <p class="planner-note">画像内の文字は、使用中のデバイスから選んだ画像だけをブラウザ内OCRで読み取ります。場所が見つかった場合は確認後に大まかな座標を調べ、予定が近づいたらブラウザ通知します。リアルタイム混雑は交通API接続時だけ表示します。</p>
         </div>
       </div>
 
@@ -210,6 +210,7 @@
           <span><i class="legend-current"></i>現在地</span>
           <span><i class="legend-event"></i>予定場所</span>
           <span><i class="legend-route"></i>移動ルート</span>
+          <span><i class="legend-traffic"></i>渋滞区間</span>
         </div>
         <ul class="route-list" id="route-list"></ul>
         <section class="schedule-board" aria-label="表示日のスケジュール表">
@@ -387,10 +388,11 @@
     window.SUPER_SCHEDULE_CONFIG = {
       supabaseUrl: "https://ealykpoepyqpuxtfqabf.supabase.co",
       supabaseAnonKey: "sb_publishable_lo7QUF2qKnhf7GLBjyz1lw_eu0fhF5l",
-      authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
+      authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html",
+      tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=time-edit-fix-1"></script>
+  <script src="planner.js?v=realtime-route-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

@@ -1465,6 +1465,14 @@ h3 {
   background: #39bdf8;
 }
 
+.legend-traffic {
+  width: 28px;
+  height: 5px;
+  border-radius: 999px;
+  background: #f04438;
+  box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.12);
+}
+
 .route-list {
   display: grid;
   gap: 10px;

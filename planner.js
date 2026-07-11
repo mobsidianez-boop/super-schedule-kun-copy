@@ -994,7 +994,7 @@
     const start = startInput.value;
     const end = endInput.value;
     let location = cleanText(locationInput.value, 48);
-    const travelMinutes = clampNumber(travelInput.value, 0, 240);
+    const notifyLeadMinutes = clampNumber(travelInput.value || 30, 0, 240);
 
     if (!title || !date || !start || !end) {
       showSummary("予定名・日付・開始・終了を入力してください。");
@@ -1027,7 +1027,8 @@
       start,
       end,
       location,
-      travelMinutes,
+      travelMinutes: 0,
+      notifyLeadMinutes,
       createdAt: new Date().toISOString(),
     };
 
@@ -1086,7 +1087,8 @@
       start,
       end,
       location,
-      travelMinutes: location ? 30 : 0,
+      travelMinutes: 0,
+      notifyLeadMinutes: 30,
       inferredDate: !detectedDate,
       inferredTime: !detectedStart,
     };
@@ -1391,8 +1393,8 @@
     const fallback = {
       query: location,
       displayName: location,
-      crowd: estimateCrowd({ display_name: location, type: "" }, event),
-      source: "場所検索に失敗したため、地名と時刻だけから作った混雑目安です。",
+      crowd: null,
+      source: "場所検索に失敗しました。リアルタイム混雑はライブデータAPIが必要です。",
       fetchedAt: new Date().toISOString(),
     };
 
@@ -1400,7 +1402,7 @@
       const candidates = await fetchPlaceCandidates(location, event, 1);
       return candidates[0] || {
         ...fallback,
-        source: "座標候補が見つからなかったため、地名と時刻だけから作った混雑目安です。",
+        source: "座標候補が見つかりませんでした。リアルタイム混雑はライブデータAPIが必要です。",
       };
     } catch {
       return fallback;
@@ -1475,7 +1477,7 @@
       category: "detected coordinates",
       mapUrl: `https://www.openstreetmap.org/?mlat=${coordinates.lat}&mlon=${coordinates.lon}#map=16/${coordinates.lat}/${coordinates.lon}`,
       googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${coordinates.lat},${coordinates.lon}`,
-      crowd: estimateCrowd({ display_name: location, type: "" }, event),
+      crowd: null,
       source: "文章やGoogle Maps共有URLから座標を直接検出しました。",
       fetchedAt: new Date().toISOString(),
     };
@@ -1567,8 +1569,8 @@
       category: [place.category, place.type].filter(Boolean).join(" / "),
       mapUrl,
       googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`,
-      crowd: estimateCrowd(place, event),
-      source: `${place.provider || "OpenStreetMap"}の場所情報と予定時刻から作った混雑目安です。リアルタイム人流ではありません。`,
+      crowd: null,
+      source: `${place.provider || "OpenStreetMap"}の場所情報です。リアルタイム混雑はライブデータAPIが設定された場合だけ表示します。`,
       fetchedAt: new Date().toISOString(),
     };
   }
@@ -1601,7 +1603,7 @@
     return {
       query: location,
       displayName: location,
-      crowd: estimateCrowd({ display_name: location, type: "" }, event),
+      crowd: null,
       source: "場所候補が確定されなかったため、座標なしで保存します。",
       fetchedAt: new Date().toISOString(),
     };
@@ -1687,7 +1689,7 @@
       return;
     }
 
-    showSummary("予定を追加しました。場所の座標と混雑目安を調べています。");
+    showSummary("予定を追加しました。場所の座標を調べています。リアルタイム混雑は交通API接続時だけ表示します。");
     try {
       const place = await fetchPlaceIntel(event.location, event);
       events = events.map((item) => item.id === event.id
@@ -1888,12 +1890,16 @@
 
     const distanceKm = Math.round((route.distance / 1000) * 10) / 10;
     const durationMinutes = Math.max(1, Math.round(route.duration / 60));
+    const traffic = await fetchRealtimeTraffic(route.geometry);
+    const weather = await fetchArrivalWeather(place, event, durationMinutes);
     return {
-      durationMinutes: Math.max(1, Math.round(route.duration / 60)),
+      durationMinutes,
       distanceKm,
       geometry: route.geometry,
       modes: buildTravelModes(distanceKm, durationMinutes),
-      trafficNote: buildTrafficNote(event ? new Date(`${event.date}T${event.start || "10:00"}`) : new Date()),
+      traffic,
+      trafficNote: traffic.note,
+      weather,
     };
   }
 
@@ -1909,15 +1915,197 @@
     ];
   }
 
-  function buildTrafficNote(date) {
-    const hour = date.getHours();
-    if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)) {
-      return "渋滞目安: 通勤・帰宅時間帯のため混みやすい可能性があります。リアルタイム交通APIは未接続です。";
+  async function fetchRealtimeTraffic(geometry) {
+    const apiKey = cleanText(CONFIG.tomtomTrafficApiKey || CONFIG.trafficApiKey || "", 120);
+    const coordinates = geometry && Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
+    if (!apiKey || coordinates.length < 2) {
+      return {
+        source: "not-configured",
+        segments: [],
+        note: "リアルタイム交通APIは未設定です。推定渋滞は表示しません。",
+      };
     }
-    if (hour >= 11 && hour <= 14) {
-      return "渋滞目安: 昼の外出時間帯です。中心部や商業施設周辺は混む可能性があります。リアルタイム交通APIは未接続です。";
+
+    const samples = getRouteSamplePoints(coordinates, 9);
+    const segments = [];
+    const notes = [];
+    for (const sample of samples) {
+      try {
+        const flow = await fetchTomTomTrafficPoint(sample.lat, sample.lon, apiKey);
+        if (!flow) {
+          continue;
+        }
+        const free = Number(flow.freeFlowSpeed);
+        const current = Number(flow.currentSpeed);
+        const ratio = free > 0 && current >= 0 ? current / free : 1;
+        if (flow.roadClosure || ratio < 0.68) {
+          segments.push(makeTrafficSegment(coordinates, sample.index));
+          notes.push(flow.roadClosure ? "通行止め情報あり" : `速度低下 ${Math.round(ratio * 100)}%`);
+        }
+      } catch {
+        // Keep route display usable even if one live traffic request fails.
+      }
     }
-    return "渋滞目安: 現在は大きな混雑時間帯ではない見込みです。リアルタイム交通APIは未接続です。";
+
+    const mergedSegments = mergeTrafficSegments(segments);
+    return {
+      source: "tomtom",
+      segments: mergedSegments,
+      note: mergedSegments.length
+        ? `リアルタイム渋滞あり: ${uniqueStrings(notes).join(" / ")}。赤い線が渋滞区間です。`
+        : "リアルタイム交通情報では、このルート上の大きな渋滞は見つかりませんでした。",
+    };
+  }
+
+  async function fetchTomTomTrafficPoint(lat, lon, apiKey) {
+    const params = new URLSearchParams({
+      point: `${lat},${lon}`,
+      unit: "KMPH",
+      key: apiKey,
+    });
+    const response = await fetch(`https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?${params.toString()}`);
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    return data.flowSegmentData || null;
+  }
+
+  function getRouteSamplePoints(coordinates, count) {
+    const usable = coordinates
+      .map((coordinate, index) => ({
+        lon: Number(coordinate[0]),
+        lat: Number(coordinate[1]),
+        index,
+      }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+    if (usable.length <= count) {
+      return usable;
+    }
+    const samples = [];
+    for (let i = 1; i <= count; i += 1) {
+      const index = Math.min(usable.length - 1, Math.round((i * (usable.length - 1)) / (count + 1)));
+      samples.push(usable[index]);
+    }
+    return samples;
+  }
+
+  function makeTrafficSegment(coordinates, centerIndex) {
+    const start = Math.max(0, centerIndex - 4);
+    const end = Math.min(coordinates.length - 1, centerIndex + 4);
+    return { start, end };
+  }
+
+  function mergeTrafficSegments(segments) {
+    return segments
+      .filter((segment) => segment.end > segment.start)
+      .sort((a, b) => a.start - b.start)
+      .reduce((merged, segment) => {
+        const last = merged[merged.length - 1];
+        if (last && segment.start <= last.end + 1) {
+          last.end = Math.max(last.end, segment.end);
+        } else {
+          merged.push({ ...segment });
+        }
+        return merged;
+      }, []);
+  }
+
+  async function fetchArrivalWeather(place, event, durationMinutes) {
+    if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon)) {
+      return null;
+    }
+    const arrivalAt = getEstimatedArrivalAt(event, durationMinutes);
+    const params = new URLSearchParams({
+      latitude: String(place.lat),
+      longitude: String(place.lon),
+      hourly: "temperature_2m,precipitation_probability,weather_code",
+      timezone: "auto",
+      forecast_days: "16",
+    });
+    try {
+      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+      if (!response.ok) {
+        return { note: "到着予定時刻の天気を取得できませんでした。" };
+      }
+      const data = await response.json();
+      const hourly = data.hourly || {};
+      const times = Array.isArray(hourly.time) ? hourly.time : [];
+      if (!times.length) {
+        return { note: "到着予定時刻の天気予報が見つかりませんでした。" };
+      }
+      const targetHour = toWeatherHour(arrivalAt);
+      let index = times.indexOf(targetHour);
+      if (index < 0) {
+        index = findNearestWeatherIndex(times, arrivalAt);
+      }
+      if (index < 0) {
+        return { note: "予報期間外のため、到着予定時刻の天気は未取得です。" };
+      }
+      return {
+        at: arrivalAt.toISOString(),
+        label: formatArrivalTime(arrivalAt),
+        temperature: hourly.temperature_2m ? hourly.temperature_2m[index] : null,
+        precipitation: hourly.precipitation_probability ? hourly.precipitation_probability[index] : null,
+        weatherCode: hourly.weather_code ? hourly.weather_code[index] : null,
+        summary: weatherCodeLabel(hourly.weather_code ? hourly.weather_code[index] : null),
+        source: "Open-Meteo",
+      };
+    } catch {
+      return { note: "到着予定時刻の天気を取得できませんでした。" };
+    }
+  }
+
+  function getEstimatedArrivalAt(event, durationMinutes) {
+    const now = new Date();
+    if (event && event.date && event.start && !event.inferredTime) {
+      const scheduled = new Date(`${event.date}T${event.start}`);
+      if (!Number.isNaN(scheduled.getTime())) {
+        return scheduled;
+      }
+    }
+    return new Date(now.getTime() + Math.max(1, Number(durationMinutes || 1)) * 60 * 1000);
+  }
+
+  function toWeatherHour(date) {
+    const rounded = new Date(date);
+    rounded.setMinutes(0, 0, 0);
+    const year = rounded.getFullYear();
+    const month = String(rounded.getMonth() + 1).padStart(2, "0");
+    const day = String(rounded.getDate()).padStart(2, "0");
+    const hour = String(rounded.getHours()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:00`;
+  }
+
+  function findNearestWeatherIndex(times, targetDate) {
+    const target = targetDate.getTime();
+    let bestIndex = -1;
+    let bestDiff = Infinity;
+    times.forEach((time, index) => {
+      const date = new Date(time);
+      const diff = Math.abs(date.getTime() - target);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIndex = index;
+      }
+    });
+    return bestDiff <= 3 * 60 * 60 * 1000 ? bestIndex : -1;
+  }
+
+  function formatArrivalTime(date) {
+    return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:00ごろ`;
+  }
+
+  function weatherCodeLabel(code) {
+    const number = Number(code);
+    if ([0].includes(number)) return "晴れ";
+    if ([1, 2, 3].includes(number)) return "くもり";
+    if ([45, 48].includes(number)) return "霧";
+    if ([51, 53, 55, 56, 57].includes(number)) return "霧雨";
+    if ([61, 63, 65, 66, 67, 80, 81, 82].includes(number)) return "雨";
+    if ([71, 73, 75, 77, 85, 86].includes(number)) return "雪";
+    if ([95, 96, 99].includes(number)) return "雷雨";
+    return "天気情報";
   }
 
   function initMap(current, zoom = 13, options = {}) {
@@ -2019,7 +2207,30 @@
         style: { color: "#7047eb", weight: 5, opacity: 0.75 },
       }).addTo(plannerMap);
       routeLines.push(line);
+      drawTrafficSegments(route);
     }
+  }
+
+  function drawTrafficSegments(route) {
+    const coordinates = route && route.geometry && Array.isArray(route.geometry.coordinates)
+      ? route.geometry.coordinates
+      : [];
+    const segments = route && route.traffic && Array.isArray(route.traffic.segments)
+      ? route.traffic.segments
+      : [];
+    segments.forEach((segment) => {
+      const slice = coordinates.slice(segment.start, segment.end + 1);
+      if (slice.length < 2) {
+        return;
+      }
+      const line = window.L.geoJSON({
+        type: "LineString",
+        coordinates: slice,
+      }, {
+        style: { color: "#f04438", weight: 7, opacity: 0.9 },
+      }).addTo(plannerMap);
+      routeLines.push(line);
+    });
   }
 
   function drawSchedulePlaceMarker(event) {
@@ -2185,13 +2396,15 @@
         item.append(createTextSpan(`${event.location}: 車で約${route.durationMinutes}分 / ${route.distanceKm}km`));
         if (Array.isArray(route.modes)) {
           route.modes.forEach((mode) => {
-            item.append(createTextSpan(`${mode.label}: 約${mode.minutes}分（${mode.note}）`));
+            item.append(createTextSpan(`${mode.label}: このくらい ${mode.minutes}分（${mode.note}）`));
           });
         }
-        if (event.place && event.place.crowd) {
-          item.append(createTextSpan(`混雑目安: ${event.place.crowd.level}（${event.place.crowd.reason}）`));
-        }
+        item.append(createTextSpan(`通知: 開始${getNotifyLeadMinutes(event)}分前`));
         item.append(createTextSpan(`渋滞情報: ${route.trafficNote}`));
+        if (route.traffic && route.traffic.segments && route.traffic.segments.length) {
+          item.append(createTextSpan("赤いルート線が渋滞区間です。"));
+        }
+        item.append(createTextSpan(formatWeatherText(route.weather)));
       } else {
         item.append(createTextSpan(`${event.location}: ${status || "移動時間を取得できませんでした。"}`));
       }
@@ -2204,6 +2417,21 @@
     const span = document.createElement("span");
     span.textContent = text;
     return span;
+  }
+
+  function formatWeatherText(weather) {
+    if (!weather) {
+      return "到着予定時刻の天気: 未取得";
+    }
+    if (weather.note) {
+      return `到着予定時刻の天気: ${weather.note}`;
+    }
+    const details = [
+      weather.summary,
+      Number.isFinite(Number(weather.temperature)) ? `${weather.temperature}℃` : "",
+      Number.isFinite(Number(weather.precipitation)) ? `降水確率${weather.precipitation}%` : "",
+    ].filter(Boolean).join(" / ");
+    return `到着予定時刻の天気（${weather.label}）: ${details || "取得しました"}`;
   }
 
   function escapeHtml(value) {
@@ -2505,7 +2733,7 @@
       formatDate(candidate.date),
       getEventTimeLabel(candidate),
       candidate.location ? `場所: ${candidate.location}` : "場所未設定",
-      candidate.travelMinutes ? `移動${candidate.travelMinutes}分` : "移動なし",
+      `通知: 開始${Number(candidate.notifyLeadMinutes ?? 30)}分前`,
       candidate.inferredDate ? "日付は今日で仮設定" : "",
       candidate.inferredTime ? "時刻が不明です。あとで編集できます" : "",
     ].filter(Boolean).join(" / ");
@@ -2555,9 +2783,9 @@
       candidatePlace.append(createTextBlock("座標目安: 取得できませんでした"));
     }
 
-    const crowd = place.crowd ? `混雑目安: ${place.crowd.level}（${place.crowd.reason}）` : "混雑目安: 未取得";
+    const crowd = place.crowd ? `リアルタイム混雑: ${place.crowd.level}（${place.crowd.reason}）` : "リアルタイム混雑: 未接続";
     candidatePlace.append(createTextBlock(crowd));
-    candidatePlace.append(createTextBlock(place.source || "混雑目安です。"));
+    candidatePlace.append(createTextBlock(place.source || "場所情報です。リアルタイム混雑は交通API接続時だけ表示します。"));
 
     if (place.mapUrl) {
       const link = document.createElement("a");
@@ -2787,14 +3015,6 @@
     }
 
     dayEvents.forEach((item) => {
-      if (item.travelMinutes > 0 && hasExactTime(item)) {
-        timelineBoard.append(createTimelineRow(
-          minutesToTime(Math.max(DAY_START, timeToMinutes(item.start) - item.travelMinutes)),
-          `${item.title} まで移動`,
-          item.location ? `行き先: ${item.location}` : "移動時間メモ",
-          true,
-        ));
-      }
       timelineBoard.append(createTimelineRow(
         getEventTimeLabel(item),
         item.title,
@@ -2814,8 +3034,9 @@
       parts.push(`座標: ${item.place.lat.toFixed(4)}, ${item.place.lon.toFixed(4)}`);
     }
     if (item.place && item.place.crowd) {
-      parts.push(`混雑目安: ${item.place.crowd.level}`);
+      parts.push(`リアルタイム混雑: ${item.place.crowd.level}`);
     }
+    parts.push(`通知: 開始${getNotifyLeadMinutes(item)}分前`);
     if (item.placePending) {
       parts.push("場所情報を取得中");
     }
@@ -2827,7 +3048,7 @@
     const busyBlocks = dayEvents
       .filter((item) => hasExactTime(item))
       .map((item) => ({
-        start: Math.max(DAY_START, timeToMinutes(item.start) - Number(item.travelMinutes || 0)),
+        start: Math.max(DAY_START, timeToMinutes(item.start)),
         end: Math.min(DAY_END, timeToMinutes(item.end)),
       }))
       .filter((item) => item.end > DAY_START && item.start < DAY_END)
@@ -2949,8 +3170,8 @@
         location = inferredLocation;
       }
     }
-    const travelMinutes = promptNumber("移動時間（分）", Number(target.travelMinutes || 0), 0, 240);
-    if (travelMinutes === null) return;
+    const notifyLeadMinutes = promptNumber("通知タイミング（開始何分前）", getNotifyLeadMinutes(target), 0, 240);
+    if (notifyLeadMinutes === null) return;
 
     const locationChanged = location !== (target.location || "");
     const updated = {
@@ -2960,7 +3181,8 @@
       start,
       end,
       location,
-      travelMinutes,
+      travelMinutes: 0,
+      notifyLeadMinutes,
       inferredDate: false,
       inferredTime: false,
       place: locationChanged ? null : target.place,
@@ -3236,7 +3458,7 @@
     if (plannerStorageMode === "test") {
       return;
     }
-    if (!event || !event.date || !event.start || event.inferredTime || !event.place) {
+    if (!event || !event.date || !event.start || event.inferredTime) {
       return;
     }
     if (!("Notification" in window)) {
@@ -3251,7 +3473,7 @@
     }
 
     const eventAt = new Date(`${event.date}T${event.start}`);
-    const notifyLeadMinutes = Math.max(15, Math.min(120, Number(event.travelMinutes || 30)));
+    const notifyLeadMinutes = getNotifyLeadMinutes(event);
     const notifyAt = new Date(eventAt.getTime() - notifyLeadMinutes * 60 * 1000);
     const delay = notifyAt.getTime() - Date.now();
 
@@ -3264,11 +3486,21 @@
       window.clearTimeout(notificationTimers.get(event.id));
     }
 
-    const timerId = window.setTimeout(() => {
-      const crowd = event.place && event.place.crowd ? event.place.crowd.level : "未取得";
-      const reason = event.place && event.place.crowd ? event.place.crowd.reason : "場所情報なし";
+    const timerId = window.setTimeout(async () => {
+      let liveInfo = "";
+      if (currentPosition && event.place && Number.isFinite(event.place.lat) && Number.isFinite(event.place.lon)) {
+        try {
+          const route = await fetchRouteEstimate(currentPosition, event.place, event);
+          liveInfo = ` / 車で約${route.durationMinutes}分 / ${route.trafficNote}`;
+          if (route.weather) {
+            liveInfo += ` / ${formatWeatherText(route.weather).replace("到着予定時刻の天気", "天気")}`;
+          }
+        } catch {
+          liveInfo = " / 直前の交通情報は取得できませんでした";
+        }
+      }
       new Notification("予定が近づいています", {
-        body: `${event.start} ${event.title} / ${event.location || "場所未設定"} / 混雑目安: ${crowd}（${reason}）`,
+        body: `${event.start} ${event.title} / ${event.location || "場所未設定"}${liveInfo}`,
       });
       notificationTimers.delete(event.id);
     }, timerDelay);
@@ -3304,6 +3536,18 @@
     return Math.min(max, Math.max(min, Math.round(number)));
   }
 
+  function getNotifyLeadMinutes(event) {
+    const explicit = Number(event && event.notifyLeadMinutes);
+    if (Number.isFinite(explicit)) {
+      return Math.max(0, Math.min(240, Math.round(explicit)));
+    }
+    const legacy = Number(event && event.travelMinutes);
+    if (Number.isFinite(legacy) && legacy > 0) {
+      return Math.max(0, Math.min(240, Math.round(legacy)));
+    }
+    return 30;
+  }
+
   function timeToMinutes(value) {
     const [hours, minutes] = String(value).split(":").map(Number);
     return hours * 60 + minutes;
@@ -3331,6 +3575,9 @@
     dateInput.value = date;
     startInput.value = minutesToTime(startMinutes);
     endInput.value = minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
+    if (travelInput) {
+      travelInput.value = "30";
+    }
   }
 
   function toDateInputValue(date) {
