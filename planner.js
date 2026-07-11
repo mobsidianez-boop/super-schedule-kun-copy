@@ -1048,6 +1048,7 @@
 
   function detectSchedule(rawText) {
     const preparedText = prepareScheduleSource(rawText);
+    const relevantRawText = buildRelevantScheduleText(rawText, preparedText);
     const text = cleanText(normalizeScheduleText(preparedText), 420);
     if (!text) {
       setDetectMessage("候補にしたい文章を入力してください。");
@@ -1061,9 +1062,9 @@
     }
 
     const base = new Date();
-    const rawScheduleText = cleanText(normalizeScheduleText(rawText), 900);
+    const rawScheduleText = cleanText(normalizeScheduleText(relevantRawText), 900);
     const detectedDate = detectDate(scheduleText, base) || detectDate(preparedText, base) || detectDate(text, base) || detectDate(rawScheduleText, base);
-    const detectedStops = mergeDetectedStops(extractScheduleStops(rawText), extractScheduleStops(preparedText));
+    const detectedStops = mergeDetectedStops(extractScheduleStops(relevantRawText), extractScheduleStops(preparedText));
     const detectedRange = detectTimeRange(scheduleText);
     const fallbackRange = detectedRange.start && detectedRange.end ? detectedRange : detectTimeRange(preparedText);
     const stopTimes = detectedStops
@@ -1285,6 +1286,39 @@
       .sort((a, b) => b.score - a.score || a.line.length - b.line.length)[0];
 
     return best ? best.line : lines.join("\n");
+  }
+
+  function buildRelevantScheduleText(rawText, fallbackText = "") {
+    const lines = getUsefulMessageLines(rawText);
+    if (!lines.length) {
+      return fallbackText || cleanOcrText(rawText);
+    }
+
+    const scores = lines.map((line) => scoreScheduleLine(normalizeScheduleText(line)));
+    const selected = new Set();
+    scores.forEach((score, index) => {
+      const line = normalizeScheduleText(lines[index]);
+      const strongSignal = score >= 3 || (hasTimeSignal(line) && (detectLocation(line) || hasEventWord(line)));
+      if (!strongSignal) {
+        return;
+      }
+      selected.add(index);
+      if (index > 0 && (hasDateSignal(lines[index - 1]) || hasTimeSignal(lines[index - 1]) || scoreScheduleLine(normalizeScheduleText(lines[index - 1])) >= 2)) {
+        selected.add(index - 1);
+      }
+      if (index + 1 < lines.length && (hasDateSignal(lines[index + 1]) || hasTimeSignal(lines[index + 1]) || scoreScheduleLine(normalizeScheduleText(lines[index + 1])) >= 2)) {
+        selected.add(index + 1);
+      }
+    });
+
+    if (!selected.size) {
+      return fallbackText || lines.join("\n");
+    }
+
+    return [...selected]
+      .sort((a, b) => a - b)
+      .map((index) => lines[index])
+      .join("\n");
   }
 
   function getUsefulMessageLines(rawText) {
@@ -1812,8 +1846,8 @@
   function getEventStops(eventOrStops) {
     const stops = Array.isArray(eventOrStops) ? eventOrStops : eventOrStops && Array.isArray(eventOrStops.stops) ? eventOrStops.stops : [];
     return stops
-      .map((stop) => ({
-        id: stop.id || createId(),
+      .map((stop, index) => ({
+        id: stop.id || createStableStopId(stop, index),
         time: cleanText(stop.time || "", 5),
         title: cleanText(stop.title || "", 48),
         location: cleanLocation(stop.location || ""),
@@ -1821,6 +1855,15 @@
         placePending: Boolean(stop.placePending),
       }))
       .filter((stop) => stop.location);
+  }
+
+  function createStableStopId(stop, index = 0) {
+    const source = `${stop && stop.time || ""}|${stop && stop.location || ""}|${stop && stop.title || ""}|${index}`;
+    let hash = 0;
+    for (let charIndex = 0; charIndex < source.length; charIndex += 1) {
+      hash = ((hash << 5) - hash + source.charCodeAt(charIndex)) | 0;
+    }
+    return `stop-${Math.abs(hash).toString(36)}`;
   }
 
   function getEventRouteTargets(event) {
@@ -2788,6 +2831,77 @@
     }
   }
 
+  async function showEventFullRoute(eventId) {
+    if (!ensurePlannerAccess()) {
+      return;
+    }
+    const event = events.find((item) => item.id === eventId);
+    if (!event || !hasRouteTargets(event)) {
+      setRouteStatus("この予定には場所がありません。");
+      return;
+    }
+    if (!window.L) {
+      setRouteStatus("地図ライブラリを読み込めませんでした。通信状態を確認してください。");
+      return;
+    }
+
+    setRouteStatus(`${event.title} の全体ルートを調べています。`);
+    try {
+      activeRouteEventId = `${eventId}:full`;
+      const updatedEvent = await ensureEventPlaces(event);
+      saveEvents();
+      const targets = getSortedEventRouteTargets(updatedEvent)
+        .filter((target) => target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon));
+
+      if (!targets.length) {
+        setRouteStatus("この予定の場所座標を取得できませんでした。");
+        activeRouteEventId = "";
+        return;
+      }
+
+      initMap(targets[0].place, 14, { recenter: true });
+      clearRouteAndEventLayers();
+      if (currentPosition) {
+        updateCurrentPositionMarker(currentPosition);
+      }
+      targets.forEach(drawSchedulePlaceMarker);
+
+      if (targets.length < 2) {
+        renderRouteList([{ event: updatedEvent, target: targets[0], status: "この予定の場所は1件だけです。" }]);
+        fitMapToTargets(targets);
+        setRouteStatus("この予定の場所は1件だけです。");
+        return;
+      }
+
+      const routeResults = [];
+      for (let index = 1; index < targets.length; index += 1) {
+        const from = targets[index - 1];
+        const target = targets[index];
+        const fromLabel = from.time ? `${from.time} ${from.title}` : from.title;
+        try {
+          setRouteStatus(`${fromLabel} から ${target.location} への道路ルートを調べています。`);
+          const route = await fetchRouteEstimate(from.place, target.place, updatedEvent);
+          routeResults.push({ event: updatedEvent, target, route, fromLabel });
+          drawRouteLine(target, route);
+        } catch (error) {
+          routeResults.push({
+            event: updatedEvent,
+            target,
+            fromLabel,
+            status: `移動時間を取得できませんでした: ${getErrorText(error)}`,
+          });
+        }
+      }
+
+      renderRouteList(routeResults);
+      fitMapToTargets(targets);
+      setRouteStatus(`${event.title} の場所を登録時間順に道路ルートで結びました。`);
+    } catch (error) {
+      activeRouteEventId = "";
+      setRouteStatus(`全体ルートを取得できませんでした: ${getErrorText(error)}`);
+    }
+  }
+
   function fitMapToContent(current, routeResults) {
     const points = [[current.lat, current.lon]];
     routeResults.forEach(({ event, target }) => {
@@ -2798,6 +2912,20 @@
     });
     if (points.length > 1) {
       plannerMap.fitBounds(window.L.latLngBounds(points), { padding: [28, 28] });
+    }
+  }
+
+  function fitMapToTargets(targets) {
+    const points = targets
+      .filter((target) => target.place && Number.isFinite(target.place.lat) && Number.isFinite(target.place.lon))
+      .map((target) => [target.place.lat, target.place.lon]);
+    if (currentPosition) {
+      points.push([currentPosition.lat, currentPosition.lon]);
+    }
+    if (points.length > 1) {
+      plannerMap.fitBounds(window.L.latLngBounds(points), { padding: [28, 28] });
+    } else if (points.length === 1) {
+      plannerMap.setView(points[0], 14);
     }
   }
 
@@ -3510,6 +3638,7 @@
         makeEventMeta(item),
         false,
         item.id,
+        { fullRoute: getEventRouteTargets(item).length > 1 },
       ));
       getEventStops(item)
         .filter((stop) => stop.time)
@@ -3619,6 +3748,14 @@
       editButton.type = "button";
       editButton.textContent = "編集";
       editButton.addEventListener("click", () => editEvent(eventId));
+      if (options.fullRoute) {
+        const routeButton = document.createElement("button");
+        routeButton.className = "timeline-delete";
+        routeButton.type = "button";
+        routeButton.textContent = "全体ルート";
+        routeButton.addEventListener("click", () => showEventFullRoute(eventId));
+        item.append(routeButton);
+      }
       const deleteButton = document.createElement("button");
       deleteButton.className = "timeline-delete";
       deleteButton.type = "button";
