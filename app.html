@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん アプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=map-follow-fix-1">
+  <link rel="stylesheet" href="style.css?v=email-confirm-required-1">
 </head>
 <body class="app-mode">
   <header class="header">
@@ -104,6 +104,7 @@
           <div class="auth-actions">
             <button class="button primary" type="submit">ログイン</button>
             <button class="button" type="button" id="planner-signup-button">新規登録</button>
+            <button class="button" type="button" id="planner-resend-button">確認メールを再送</button>
           </div>
         </form>
         <div class="planner-code-row">
@@ -385,7 +386,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=map-follow-fix-1"></script>
+  <script src="planner.js?v=email-confirm-required-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
@@ -496,6 +497,8 @@
         return message;
       };
 
+      const isEmailVerified = (user) => Boolean(user && (user.email_confirmed_at || user.confirmed_at));
+
       const loadPosts = async () => {
         setStatus("投稿を読み込んでいます。");
         const { data, error } = await supabase
@@ -575,6 +578,12 @@
           return;
         }
 
+        if (!isEmailVerified(data && data.session && data.session.user)) {
+          await supabase.auth.signOut();
+          setAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "error");
+          return;
+        }
+
         updateAuthView(data.session);
       });
 
@@ -602,11 +611,10 @@
         }
 
         if (data.session) {
-          updateAuthView(data.session);
-          return;
+          await supabase.auth.signOut();
         }
 
-        setAuthStatus("確認メールを送信しました。届かない場合は迷惑メールを確認するか、確認メールを再送してください。", "success");
+        setAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。届かない場合は再送してください。", "success");
       });
 
       resendButton.addEventListener("click", async () => {
@@ -639,11 +647,23 @@
         updateAuthView(null);
       });
 
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session && !isEmailVerified(session.user)) {
+          await supabase.auth.signOut();
+          updateAuthView(null);
+          setAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
+          return;
+        }
         updateAuthView(session);
       });
 
-      supabase.auth.getSession().then(({ data }) => {
+      supabase.auth.getSession().then(async ({ data }) => {
+        if (data.session && !isEmailVerified(data.session.user)) {
+          await supabase.auth.signOut();
+          updateAuthView(null);
+          setAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
+          return;
+        }
         updateAuthView(data.session);
       });
 

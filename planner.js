@@ -1,7 +1,6 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
-  const LOCAL_ACCOUNTS_KEY = "superScheduleKunLocalAccounts";
   const CLOUD_EVENTS_TABLE = "events";
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
@@ -17,6 +16,7 @@
   const plannerAuthEmail = document.querySelector("#planner-auth-email");
   const plannerAuthPassword = document.querySelector("#planner-auth-password");
   const plannerSignupButton = document.querySelector("#planner-signup-button");
+  const plannerResendButton = document.querySelector("#planner-resend-button");
   const plannerAccessCode = document.querySelector("#planner-access-code");
   const plannerCodeButton = document.querySelector("#planner-code-button");
   const plannerLogoutButton = document.querySelector("#planner-logout-button");
@@ -206,6 +206,10 @@
     plannerSignupButton.addEventListener("click", signupPlanner);
   }
 
+  if (plannerResendButton) {
+    plannerResendButton.addEventListener("click", resendPlannerConfirmation);
+  }
+
   if (plannerCodeButton) {
     plannerCodeButton.addEventListener("click", unlockWithCode);
   }
@@ -252,9 +256,15 @@
       return;
     }
 
-    plannerSupabase.auth.onAuthStateChange((_event, session) => {
+    plannerSupabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
-        unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session });
+        if (isEmailVerified(session.user)) {
+          unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session });
+        } else {
+          await plannerSupabase.auth.signOut();
+          lockPlanner();
+          setPlannerAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
+        }
       } else if (localStorage.getItem(ACCESS_KEY) !== ACCESS_CODE) {
         lockPlanner();
       }
@@ -262,6 +272,11 @@
 
     const { data } = await plannerSupabase.auth.getSession();
     if (data.session) {
+      if (!isEmailVerified(data.session.user)) {
+        await plannerSupabase.auth.signOut();
+        setPlannerAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
+        return;
+      }
       unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
       return;
     }
@@ -283,7 +298,6 @@
     setPlannerAuthStatus("ログインしています。");
     let data = null;
     let error = null;
-    let localAuth = false;
     if (plannerSupabase) {
       try {
         ({ data, error } = await plannerSupabase.auth.signInWithPassword({ email, password }));
@@ -298,22 +312,21 @@
     } else {
       error = new Error("Supabase client is unavailable");
     }
-    if (isFetchFailure(error) || /supabase client is unavailable/i.test(getRawErrorText(error))) {
-      const fallback = await signInPlannerLocally(email, password);
-      data = fallback.data;
-      error = fallback.error;
-      localAuth = fallback.local;
-    }
     if (error) {
       setPlannerAuthStatus(`ログインできませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
       return;
     }
-    if (data.session) {
-      unlockPlanner(
-        localAuth ? "Supabaseに接続できないため、このブラウザ内のメールアカウントでログインしました。" : "ログイン中です。予定アプリを使えます。",
-        { mode: localAuth ? "local" : "user", session: data.session }
-      );
+    if (!isEmailVerified(data && data.session && data.session.user)) {
+      if (plannerSupabase) {
+        await plannerSupabase.auth.signOut();
+      }
+      setPlannerAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "error");
+      animateGate("gate-shake");
+      return;
+    }
+    if (data && data.session) {
+      unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
     }
   }
 
@@ -329,7 +342,6 @@
     setPlannerAuthStatus("登録しています。");
     let data = null;
     let error = null;
-    let localAuth = false;
     if (plannerSupabase) {
       try {
         ({ data, error } = await plannerSupabase.auth.signUp({
@@ -350,12 +362,6 @@
     } else {
       error = new Error("Supabase client is unavailable");
     }
-    if (isFetchFailure(error) || /supabase client is unavailable/i.test(getRawErrorText(error))) {
-      const fallback = await signupPlannerLocally(email, password);
-      data = fallback.data;
-      error = fallback.error;
-      localAuth = fallback.local;
-    }
 
     if (error) {
       setPlannerAuthStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
@@ -363,15 +369,11 @@
       return;
     }
 
-    if (data.session) {
-      unlockPlanner(
-        localAuth ? "Supabaseに接続できないため、このブラウザ内のメールアカウントで登録しました。" : "登録してログインしました。予定アプリを使えます。",
-        { mode: localAuth ? "local" : "user", session: data.session }
-      );
-      return;
+    if (data && data.session) {
+      await plannerSupabase.auth.signOut();
     }
 
-    setPlannerAuthStatus("登録しました。確認メールが必要な設定の場合は、メール内のリンクを開いてからログインしてください。", "success");
+    setPlannerAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。", "success");
   }
 
   async function signInPlannerViaRest(email, password) {
@@ -437,72 +439,36 @@
     });
   }
 
-  async function signInPlannerLocally(email, password) {
-    const accounts = loadLocalAccounts();
-    const account = accounts[normalizeEmail(email)];
-    if (!account) {
-      return { data: null, error: new Error("Supabaseに接続できず、このブラウザ内にも登録がありません。先に新規登録してください。"), local: true };
+  async function resendPlannerConfirmation() {
+    if (!plannerSupabase) {
+      setPlannerAuthStatus("確認メールを送れませんでした。Supabaseの接続設定を確認してください。", "error");
+      animateGate("gate-shake");
+      return;
     }
-    const passwordHash = await hashLocalPassword(email, password, account.salt);
-    if (passwordHash !== account.passwordHash) {
-      return { data: null, error: new Error("パスワードが違います。"), local: true };
+    const email = plannerAuthEmail.value.trim();
+    if (!email) {
+      setPlannerAuthStatus("確認メールを再送するメールアドレスを入力してください。", "warning");
+      animateGate("gate-shake");
+      return;
     }
-    return { data: { session: makeLocalSession(email) }, error: null, local: true };
-  }
-
-  async function signupPlannerLocally(email, password) {
-    const accounts = loadLocalAccounts();
-    const key = normalizeEmail(email);
-    if (accounts[key]) {
-      return { data: null, error: new Error("このブラウザ内では登録済みです。ログインしてください。"), local: true };
-    }
-    const salt = createId();
-    accounts[key] = {
-      email: key,
-      salt,
-      passwordHash: await hashLocalPassword(email, password, salt),
-      createdAt: new Date().toISOString(),
-    };
-    localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(accounts));
-    return { data: { session: makeLocalSession(email) }, error: null, local: true };
-  }
-
-  function loadLocalAccounts() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(LOCAL_ACCOUNTS_KEY) || "{}");
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
-  async function hashLocalPassword(email, password, salt) {
-    const value = `${normalizeEmail(email)}:${salt}:${password}`;
-    if (window.crypto && window.crypto.subtle && window.TextEncoder) {
-      const bytes = new TextEncoder().encode(value);
-      const digest = await window.crypto.subtle.digest("SHA-256", bytes);
-      return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    }
-    return btoa(unescape(encodeURIComponent(value)));
-  }
-
-  function makeLocalSession(email) {
-    const normalized = normalizeEmail(email);
-    return {
-      access_token: "local-browser-session",
-      user: {
-        id: `local:${encodeLocalUserId(normalized)}`,
-        email: normalized,
+    setPlannerAuthStatus("確認メールを再送しています。");
+    const { error } = await plannerSupabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: CONFIG.authRedirectUrl || window.location.href,
       },
-    };
+    });
+    if (error) {
+      setPlannerAuthStatus(`確認メールを再送できませんでした: ${getErrorText(error)}`, "error");
+      animateGate("gate-shake");
+      return;
+    }
+    setPlannerAuthStatus("確認メールを再送しました。メール内のリンクを開いてからログインしてください。", "success");
   }
 
-  function normalizeEmail(email) {
-    return String(email || "").trim().toLowerCase();
-  }
-
-  function encodeLocalUserId(value) {
-    return btoa(unescape(encodeURIComponent(value))).replace(/[+/=]/g, "");
+  function isEmailVerified(user) {
+    return Boolean(user && (user.email_confirmed_at || user.confirmed_at));
   }
 
   async function readAuthError(response) {
@@ -557,10 +523,10 @@
 
   async function unlockPlanner(message, options = {}) {
     plannerUnlocked = true;
-    plannerStorageMode = options.mode === "user" || options.mode === "local" ? options.mode : "test";
+    plannerStorageMode = options.mode === "user" ? "user" : "test";
     plannerUserId = options.session && options.session.user ? options.session.user.id : "";
     plannerCloudWarningShown = false;
-    if (plannerStorageMode === "user" || plannerStorageMode === "local") {
+    if (plannerStorageMode === "user") {
       await loadUserEvents(options.session);
     } else {
       events = loadEvents(getLocalEventsKey());
@@ -2635,7 +2601,7 @@
   }
 
   function getLocalEventsKey() {
-    if ((plannerStorageMode === "user" || plannerStorageMode === "local") && plannerUserId) {
+    if (plannerStorageMode === "user" && plannerUserId) {
       return `${STORAGE_KEY}:user:${plannerUserId}`;
     }
     if (plannerStorageMode === "test") {
@@ -2667,10 +2633,6 @@
     }
     plannerUserId = session.user.id;
     events = loadEvents(getLocalEventsKey());
-    if (plannerStorageMode === "local") {
-      showCloudStorageWarning("Supabaseに接続できないため、このブラウザ内に予定を保存しています。");
-      return;
-    }
     if (!plannerSupabase) {
       showCloudStorageWarning("クラウド保存を読み込めませんでした。この端末内の予定だけを表示しています。");
       return;
