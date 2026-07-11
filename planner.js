@@ -1032,13 +1032,8 @@
       createdAt: new Date().toISOString(),
     };
 
-    if (locationConfirmed) {
+    if (locationConfirmed || location) {
       event.placePending = true;
-    } else if (location) {
-      const confirmed = window.confirm(`「${location}」はこの予定の場所ですか？`);
-      if (confirmed) {
-        event.placePending = true;
-      }
     }
 
     return event;
@@ -2396,7 +2391,7 @@
         item.append(createTextSpan(`${event.location}: 車で約${route.durationMinutes}分 / ${route.distanceKm}km`));
         if (Array.isArray(route.modes)) {
           route.modes.forEach((mode) => {
-            item.append(createTextSpan(`${mode.label}: このくらい ${mode.minutes}分（${mode.note}）`));
+            item.append(createTextSpan(`${mode.label}: 約${mode.minutes}分（${mode.note}）`));
           });
         }
         item.append(createTextSpan(`通知: 開始${getNotifyLeadMinutes(event)}分前`));
