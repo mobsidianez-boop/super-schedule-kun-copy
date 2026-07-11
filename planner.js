@@ -1340,9 +1340,9 @@
           lon: position.coords.longitude,
           accuracy: position.coords.accuracy,
         };
-        initMap(currentPosition, 15);
+        initMap(currentPosition, 15, { recenter: !currentMarker });
         updateCurrentPositionMarker(currentPosition);
-        renderScheduleMap(getSelectedDayEvents());
+        renderScheduleMap(getSelectedDayEvents(), { autoFrame: false });
         setRouteStatus(`現在地を表示しています。精度目安: 約${Math.round(currentPosition.accuracy || 0)}m。予定場所をタッチすると経路を確認できます。`);
       },
       (error) => {
@@ -1372,7 +1372,7 @@
       const current = currentPosition || await getCurrentPosition();
       currentPosition = current;
       const routeResults = [];
-      initMap(current, 15);
+      initMap(current, 15, { recenter: true });
       clearRouteAndEventLayers();
       drawCurrentPosition(current);
 
@@ -1509,15 +1509,17 @@
     return "渋滞目安: 現在は大きな混雑時間帯ではない見込みです。リアルタイム交通APIは未接続です。";
   }
 
-  function initMap(current, zoom = 13) {
+  function initMap(current, zoom = 13, options = {}) {
     if (!plannerMap) {
       plannerMap = window.L.map(mapContainer).setView([current.lat, current.lon], zoom);
       window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(plannerMap);
-    } else {
+    } else if (options.recenter) {
       plannerMap.setView([current.lat, current.lon], zoom);
+      window.setTimeout(() => plannerMap.invalidateSize(), 50);
+    } else {
       window.setTimeout(() => plannerMap.invalidateSize(), 50);
     }
   }
@@ -1620,7 +1622,7 @@
     eventMarkers.push(marker);
   }
 
-  function renderScheduleMap(dayEvents) {
+  function renderScheduleMap(dayEvents, options = {}) {
     if (!window.L || !mapContainer || !plannerMap) {
       return;
     }
@@ -1649,6 +1651,10 @@
 
     if (currentPosition) {
       points.push([currentPosition.lat, currentPosition.lon]);
+    }
+
+    if (options.autoFrame === false) {
+      return;
     }
 
     if (points.length > 1) {
@@ -1694,7 +1700,7 @@
       activeRouteEventId = eventId;
       const current = currentPosition || await getCurrentPosition();
       currentPosition = current;
-      initMap(current, 15);
+      initMap(current, 15, { recenter: true });
       updateCurrentPositionMarker(current);
 
       let target = event;
