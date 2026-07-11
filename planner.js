@@ -8,9 +8,7 @@
   const DAY_END = 22 * 60;
   clearSavedSupabaseConfig();
   const CONFIG = { ...loadSavedSupabaseConfig(), ...(window.SUPER_SCHEDULE_CONFIG || {}) };
-  const plannerSupabase = window.supabase && CONFIG.supabaseUrl && CONFIG.supabaseAnonKey
-    ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
-    : null;
+  let plannerSupabase = null;
 
   const plannerGate = document.querySelector("#planner-gate");
   const plannerApp = document.querySelector("#planner-app");
@@ -87,6 +85,13 @@
   let animatedEventId = "";
   let expirySweepId = null;
   const placeLookupIds = new Set();
+  const enabledPlannerOAuthProviders = new Set();
+  const plannerProviderLabels = {
+    google: "Google",
+    twitter: "X",
+    azure: "Microsoft",
+    facebook: "Instagram/Meta",
+  };
 
   const today = toDateInputValue(new Date());
   dateInput.value = today;
@@ -94,7 +99,10 @@
   setDefaultEventDateTime();
   attachActionAnimations();
   initSupabaseSettingsForm();
-  initPlannerAccess();
+  initPlannerRuntime().catch((error) => {
+    lockPlanner();
+    setPlannerAuthStatus(`予定管理の準備中にエラーが出ました: ${getErrorText(error)} おためしは使えます。`, "error");
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -338,6 +346,29 @@
     return String(value || "").trim().replace(/\/+$/, "");
   }
 
+  async function initPlannerRuntime() {
+    plannerSupabase = await getSupabaseClient();
+    await refreshPlannerOAuthProviderAvailability();
+    await initPlannerAccess();
+  }
+
+  async function getSupabaseClient() {
+    if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) {
+      return null;
+    }
+    for (let index = 0; index < 30; index += 1) {
+      if (window.supabase && typeof window.supabase.createClient === "function") {
+        return window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+      }
+      await delay(100);
+    }
+    return null;
+  }
+
+  function delay(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
   async function initPlannerAccess() {
     lockPlanner();
 
@@ -364,7 +395,13 @@
       }
     });
 
-    const { data } = await plannerSupabase.auth.getSession();
+    let data = null;
+    try {
+      ({ data } = await plannerSupabase.auth.getSession());
+    } catch (error) {
+      setPlannerAuthStatus(`ログイン状態を確認できませんでした: ${getErrorText(error)} おためしは使えます。`, "warning");
+      return;
+    }
     if (data.session) {
       if (!isEmailVerified(data.session.user)) {
         await plannerSupabase.auth.signOut();
@@ -430,19 +467,18 @@
       animateGate("gate-shake");
       return;
     }
-    const providerLabels = {
-      google: "Google",
-      twitter: "X",
-      azure: "Microsoft",
-      facebook: "Instagram/Meta",
-    };
-    if (!providerLabels[provider]) {
+    if (!plannerProviderLabels[provider]) {
       setPlannerAuthStatus("このログイン方法には対応していません。", "error");
       animateGate("gate-shake");
       return;
     }
+    if (!enabledPlannerOAuthProviders.has(provider)) {
+      setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインはSupabase側でまだ有効化されていません。メールアドレス登録かおためしを使ってください。`, "warning");
+      animateGate("gate-shake");
+      return;
+    }
 
-    setPlannerAuthStatus(`${providerLabels[provider]}ログインへ移動します。`);
+    setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインへ移動します。`);
     try {
       const { error } = await plannerSupabase.auth.signInWithOAuth({
         provider,
@@ -452,11 +488,11 @@
         },
       });
       if (error) {
-        setPlannerAuthStatus(`${providerLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
+        setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
         animateGate("gate-shake");
       }
     } catch (error) {
-      setPlannerAuthStatus(`${providerLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
+      setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
     }
   }
@@ -661,6 +697,61 @@
     sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
     clearTestSession({ keepAccess: true });
     unlockPlanner("おためしモードで開いています。通知は使わず、閉じると予定は消えます。", { mode: "test" });
+  }
+
+  async function refreshPlannerOAuthProviderAvailability() {
+    plannerOauthButtons.forEach((button) => {
+      button.disabled = true;
+      button.dataset.providerState = "checking";
+      button.title = "ログイン方法を確認しています";
+    });
+    if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) {
+      markPlannerOAuthProvidersUnavailable();
+      return;
+    }
+    try {
+      const response = await fetch(`${CONFIG.supabaseUrl.replace(/\/+$/, "")}/auth/v1/settings`, {
+        headers: { apikey: CONFIG.supabaseAnonKey },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const settings = await response.json();
+      const external = settings && settings.external ? settings.external : {};
+      let hasEnabledProvider = false;
+      plannerOauthButtons.forEach((button) => {
+        const provider = button.dataset.plannerOauth;
+        const isEnabled = Boolean(external[provider]);
+        hasEnabledProvider = hasEnabledProvider || isEnabled;
+        button.disabled = !isEnabled;
+        button.dataset.providerState = isEnabled ? "enabled" : "disabled";
+        button.title = isEnabled
+          ? `${plannerProviderLabels[provider]}でログイン`
+          : `${plannerProviderLabels[provider]}ログインはSupabase側で未設定です`;
+        if (isEnabled) {
+          enabledPlannerOAuthProviders.add(provider);
+        } else {
+          enabledPlannerOAuthProviders.delete(provider);
+        }
+      });
+      if (!hasEnabledProvider) {
+        setPlannerAuthStatus("外部アカウントログインはSupabase側でまだ未設定です。メールアドレス登録かおためしは使えます。", "warning");
+      }
+    } catch (error) {
+      markPlannerOAuthProvidersUnavailable();
+      setPlannerAuthStatus(`外部ログイン設定を確認できませんでした: ${getErrorText(error)} メールアドレス登録かおためしは使えます。`, "warning");
+    }
+  }
+
+  function markPlannerOAuthProvidersUnavailable() {
+    enabledPlannerOAuthProviders.clear();
+    plannerOauthButtons.forEach((button) => {
+      const provider = button.dataset.plannerOauth;
+      button.disabled = true;
+      button.dataset.providerState = "disabled";
+      button.title = `${plannerProviderLabels[provider]}ログインはSupabase側で未設定です`;
+    });
   }
 
   function clearTestSession(options = {}) {
