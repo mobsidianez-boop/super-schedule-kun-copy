@@ -1252,7 +1252,13 @@
     const rest = cleanText(timeMatch ? normalized.slice(timeMatch[0].length) : normalized, 100)
       .replace(/^\[(車|徒歩|公共交通|バス|電車|フェリー|船|飛行機|航空|drive|car|walk|transit|bus|train|ferry|ship|boat|flight|air)\]\s*/i, "")
       .replace(/^[\s、。・:：-]+/, "");
+    if (isTravelDurationText(rest)) {
+      return null;
+    }
     const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || rest.split(/\s+/)[0] || rest);
+    if (isBadLocationCandidate(location)) {
+      return null;
+    }
     const note = cleanText(location ? rest.replace(location, "") : rest, 48)
       .replace(/^[\s、。・:：-]+/, "")
       .replace(/^(で|にて|に|へ|での)\s*/, "");
@@ -1293,12 +1299,21 @@
 
     const windows = [];
     lines.forEach((line, index) => {
+      if (isTravelDurationText(line)) {
+        return;
+      }
       windows.push(line);
       if (index + 1 < lines.length) {
-        windows.push(`${line} ${lines[index + 1]}`);
+        const nextLine = isTravelDurationText(lines[index + 1]) ? "" : lines[index + 1];
+        if (nextLine) {
+          windows.push(`${line} ${nextLine}`);
+        }
       }
       if (index + 2 < lines.length) {
-        windows.push(`${line} ${lines[index + 1]} ${lines[index + 2]}`);
+        const nextLines = [lines[index + 1], lines[index + 2]].filter((item) => !isTravelDurationText(item));
+        if (nextLines.length) {
+          windows.push(`${line} ${nextLines.join(" ")}`);
+        }
       }
     });
 
@@ -1390,6 +1405,7 @@
 
   function scoreScheduleLine(line) {
     let score = 0;
+    if (isTravelDurationText(line)) score -= 4;
     if (hasDateSignal(line)) score += 2;
     if (hasTimeSignal(line)) score += 2;
     if (hasEventWord(line)) score += 2;
@@ -3351,18 +3367,21 @@
 
   function detectLocation(text) {
     const normalized = stripDateTime(text);
+    if (isTravelDurationText(normalized)) {
+      return "";
+    }
     const explicit = normalized.match(/(?:場所|会場|集合場所|行き先)[:：]?\s*([^\s、。]{2,32})/);
-    if (explicit) {
+    if (explicit && !isBadLocationCandidate(explicit[1])) {
       return cleanLocation(explicit[1]);
     }
 
     const addressAtPlace = normalized.match(/((?:[^、。でに]{1,16}[都道府県])?[^、。でに]{1,16}[市区町村][^、。でに]{0,24}の[^、。でに]{2,24})(?:で|にて)/);
-    if (addressAtPlace) {
+    if (addressAtPlace && !isBadLocationCandidate(addressAtPlace[1])) {
       return cleanLocation(addressAtPlace[1]);
     }
 
     const atPlace = normalized.match(/([^\s、。でに]{2,48})(?:で|にて)/);
-    if (atPlace) {
+    if (atPlace && !isBadLocationCandidate(atPlace[1])) {
       return cleanLocation(atPlace[1]);
     }
 
@@ -3371,8 +3390,9 @@
       return titleLocation;
     }
 
-    const suffixPlace = normalized.match(/([^\s、。]{1,32}(?:駅|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|博物館|美術館|資料館|水族館|動物園|映画館|劇場|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
-    return cleanLocation(suffixPlace ? suffixPlace[1] : "");
+    const suffixPlace = normalized.match(/([^\s、。]{1,32}(?:駅|港|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|博物館|美術館|資料館|水族館|動物園|映画館|劇場|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
+    const suffixLocation = cleanLocation(suffixPlace ? suffixPlace[1] : "");
+    return isBadLocationCandidate(suffixLocation) ? "" : suffixLocation;
   }
 
   function inferLocationFromTitle(title) {
@@ -3462,8 +3482,34 @@
     return cleanText(value, 48)
       .replace(/^(場所|会場|集合場所|行き先)[:：]?/, "")
       .replace(/^(は|が|を|に)/, "")
-      .replace(/(で|にて|集合|予定|予約|から|まで).*$/, "")
+      .replace(/(で|にて|集合|予定|予約|から|まで|到着|出発).*$/, "")
       .trim();
+  }
+
+  function isTravelDurationText(value) {
+    const text = cleanText(normalizeScheduleText(value), 80);
+    if (!text) {
+      return false;
+    }
+    if (/(所要時間|移動時間|移動|乗車時間|徒歩|車で|バスで|電車で|約?\d{1,3}分|約?\d{1,2}時間)/.test(text)) {
+      return true;
+    }
+    return /^(?:約)?\d{1,3}分(?:くらい|程度)?$/.test(text)
+      || /^(?:約)?\d{1,2}時間(?:\d{1,2}分)?(?:くらい|程度)?$/.test(text);
+  }
+
+  function isBadLocationCandidate(value) {
+    const text = cleanText(normalizeScheduleText(value), 48);
+    if (!text) {
+      return true;
+    }
+    if (/^(間|あいだ|所要時間|移動時間|徒歩|車|バス|電車|公共交通|フェリー|飛行機|約|分|時間)$/.test(text)) {
+      return true;
+    }
+    if (isTravelDurationText(text)) {
+      return true;
+    }
+    return false;
   }
 
   function showCandidate(candidate) {
