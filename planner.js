@@ -417,7 +417,7 @@
 
   async function loginPlannerWithOAuth(provider) {
     if (!plannerSupabase) {
-      setPlannerAuthStatus("Supabase接続設定が必要です。Project URLと公開キーを保存してから試してください。", "error");
+      setPlannerAuthStatus("ログイン機能に接続できません。時間を置いてもう一度試してください。", "error");
       animateGate("gate-shake");
       return;
     }

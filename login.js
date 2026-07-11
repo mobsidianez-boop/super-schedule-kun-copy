@@ -72,13 +72,13 @@
         }
       });
     } else {
-      setStatus("Supabase接続設定を保存すると、メール登録と外部アカウントログインが使えます。おためしはこのまま使えます。", "warning");
+      setStatus("ログイン機能の接続準備ができていません。おためしはこのまま使えます。", "warning");
     }
   }
 
   async function loginWithPassword() {
     if (!client) {
-      setStatus("Supabase接続設定が必要です。Project URLと公開キーを保存してください。", "error");
+      setStatus("ログイン機能に接続できません。時間を置いてもう一度試してください。", "error");
       return;
     }
     const email = emailInput.value.trim();
@@ -105,7 +105,7 @@
 
   async function signupWithEmail() {
     if (!client) {
-      setStatus("Supabase接続設定が必要です。Project URLと公開キーを保存してください。", "error");
+      setStatus("ログイン機能に接続できません。時間を置いてもう一度試してください。", "error");
       return;
     }
     const email = emailInput.value.trim();
@@ -133,7 +133,7 @@
 
   async function resendConfirmation() {
     if (!client) {
-      setStatus("Supabase接続設定が必要です。Project URLと公開キーを保存してください。", "error");
+      setStatus("ログイン機能に接続できません。時間を置いてもう一度試してください。", "error");
       return;
     }
     const email = emailInput.value.trim();
@@ -157,7 +157,7 @@
 
   async function loginWithOAuth(provider) {
     if (!client) {
-      setStatus("Supabase接続設定が必要です。Project URLと公開キーを保存してください。", "error");
+      setStatus("ログイン機能に接続できません。時間を置いてもう一度試してください。", "error");
       return;
     }
     if (!providerLabels[provider]) {

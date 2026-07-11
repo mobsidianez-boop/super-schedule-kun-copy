@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん ログイン</title>
-  <link rel="stylesheet" href="style.css?v=unknown-time-1">
+  <link rel="stylesheet" href="style.css?v=no-supabase-settings-1">
 </head>
 <body class="login-mode">
   <header class="header">
@@ -73,19 +73,6 @@
         <p>おためしでは通知を使わず、閉じると予定は消えます。</p>
       </div>
 
-      <details class="planner-connection-settings">
-        <summary>Supabase接続設定</summary>
-        <label>
-          <span>Project URL</span>
-          <input id="login-supabase-url" type="url" placeholder="https://xxxx.supabase.co">
-        </label>
-        <label>
-          <span>公開キー</span>
-          <input id="login-supabase-key" type="text" autocomplete="off" placeholder="sb_publishable_...">
-        </label>
-        <button class="button" type="button" id="login-supabase-save-button">接続設定を保存</button>
-      </details>
-
       <p class="auth-status" id="login-auth-status">ログインまたはおためしで予定管理へ進めます。</p>
     </section>
   </main>
@@ -98,6 +85,6 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="login.js?v=login-page-1"></script>
+  <script src="login.js?v=no-supabase-settings-1"></script>
 </body>
 </html>
