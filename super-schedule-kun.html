@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=demo-session-auth-1">
+  <link rel="stylesheet" href="style.css?v=email-auth-config-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -114,6 +114,18 @@
           <button class="button" type="button" id="planner-code-button">テストコードで開く</button>
           <button class="button primary" type="button" id="planner-demo-button">コードなしでおためし</button>
         </div>
+        <details class="planner-connection-settings">
+          <summary>Supabase接続設定</summary>
+          <label>
+            <span>Project URL</span>
+            <input id="planner-supabase-url" type="url" placeholder="https://xxxx.supabase.co">
+          </label>
+          <label>
+            <span>公開キー</span>
+            <input id="planner-supabase-key" type="text" autocomplete="off" placeholder="sb_publishable_...">
+          </label>
+          <button class="button" type="button" id="planner-supabase-save-button">接続設定を保存</button>
+        </details>
         <p class="auth-status" id="planner-auth-status">予定アプリはログイン後に使えます。</p>
       </div>
 
@@ -386,7 +398,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=demo-session-auth-1"></script>
+  <script src="planner.js?v=email-auth-config-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

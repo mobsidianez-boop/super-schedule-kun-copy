@@ -1017,6 +1017,46 @@ h3 {
   align-items: end;
 }
 
+.planner-connection-settings {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.planner-connection-settings summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.planner-connection-settings label {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.planner-connection-settings input {
+  min-height: 46px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: #ffffff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.planner-connection-settings .button {
+  margin-top: 12px;
+}
+
 .icon-button {
   min-height: 38px;
   padding: 0 12px;

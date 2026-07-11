@@ -1,11 +1,12 @@
 (() => {
   const STORAGE_KEY = "superScheduleKunEvents";
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
+  const SUPABASE_CONFIG_KEY = "superScheduleKunSupabaseConfig";
   const CLOUD_EVENTS_TABLE = "events";
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
-  const CONFIG = window.SUPER_SCHEDULE_CONFIG || {};
+  const CONFIG = { ...(window.SUPER_SCHEDULE_CONFIG || {}), ...loadSavedSupabaseConfig() };
   const plannerSupabase = window.supabase && CONFIG.supabaseUrl && CONFIG.supabaseAnonKey
     ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
     : null;
@@ -20,6 +21,9 @@
   const plannerAccessCode = document.querySelector("#planner-access-code");
   const plannerCodeButton = document.querySelector("#planner-code-button");
   const plannerDemoButton = document.querySelector("#planner-demo-button");
+  const plannerSupabaseUrlInput = document.querySelector("#planner-supabase-url");
+  const plannerSupabaseKeyInput = document.querySelector("#planner-supabase-key");
+  const plannerSupabaseSaveButton = document.querySelector("#planner-supabase-save-button");
   const plannerLogoutButton = document.querySelector("#planner-logout-button");
   const plannerAuthStatus = document.querySelector("#planner-auth-status");
   const form = document.querySelector("#event-form");
@@ -87,6 +91,7 @@
   viewDateInput.value = today;
   setDefaultEventDateTime();
   attachActionAnimations();
+  initSupabaseSettingsForm();
   initPlannerAccess();
 
   form.addEventListener("submit", async (event) => {
@@ -219,6 +224,10 @@
     plannerDemoButton.addEventListener("click", unlockDemoMode);
   }
 
+  if (plannerSupabaseSaveButton) {
+    plannerSupabaseSaveButton.addEventListener("click", saveSupabaseSettings);
+  }
+
   if (plannerLogoutButton) {
     plannerLogoutButton.addEventListener("click", logoutPlanner);
   }
@@ -253,6 +262,66 @@
     void element.offsetWidth;
     element.classList.add(className);
     window.setTimeout(() => element.classList.remove(className), duration);
+  }
+
+  function loadSavedSupabaseConfig() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SUPABASE_CONFIG_KEY) || "{}");
+      if (!parsed || typeof parsed !== "object") {
+        return {};
+      }
+      return {
+        supabaseUrl: typeof parsed.supabaseUrl === "string" ? parsed.supabaseUrl : "",
+        supabaseAnonKey: typeof parsed.supabaseAnonKey === "string" ? parsed.supabaseAnonKey : "",
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  function initSupabaseSettingsForm() {
+    if (plannerSupabaseUrlInput) {
+      plannerSupabaseUrlInput.value = CONFIG.supabaseUrl || "";
+    }
+    if (plannerSupabaseKeyInput) {
+      plannerSupabaseKeyInput.value = CONFIG.supabaseAnonKey || "";
+    }
+  }
+
+  async function saveSupabaseSettings() {
+    const supabaseUrl = normalizeSupabaseUrl(plannerSupabaseUrlInput && plannerSupabaseUrlInput.value);
+    const supabaseAnonKey = String(plannerSupabaseKeyInput && plannerSupabaseKeyInput.value || "").trim();
+    if (!supabaseUrl || !/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(supabaseUrl)) {
+      setPlannerAuthStatus("SupabaseのProject URLは https://xxxx.supabase.co の形で入力してください。", "error");
+      animateGate("gate-shake");
+      return;
+    }
+    if (!supabaseAnonKey || !/^(sb_publishable_|eyJ)/.test(supabaseAnonKey)) {
+      setPlannerAuthStatus("Supabaseの公開キーを入力してください。service_roleキーは入れないでください。", "error");
+      animateGate("gate-shake");
+      return;
+    }
+
+    setPlannerAuthStatus("Supabase接続を確認しています。");
+    try {
+      const health = await fetch(`${supabaseUrl}/auth/v1/health`, {
+        headers: { apikey: supabaseAnonKey },
+        cache: "no-store",
+      });
+      if (!health.ok) {
+        throw new Error(`HTTP ${health.status}`);
+      }
+      localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify({ supabaseUrl, supabaseAnonKey }));
+      setPlannerAuthStatus("Supabase接続設定を保存しました。ページを再読み込みします。", "success");
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      setPlannerAuthStatus(`Supabaseに接続できませんでした: ${getErrorText(error)} 正しいProject URLか確認してください。`, "error");
+      animateGate("gate-shake");
+    }
+  }
+
+  function normalizeSupabaseUrl(value) {
+    return String(value || "").trim().replace(/\/+$/, "");
   }
 
   async function initPlannerAccess() {
