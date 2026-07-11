@@ -6,6 +6,7 @@
   const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
+  const EMAIL_SEND_COOLDOWN_MS = 90 * 1000;
   clearSavedSupabaseConfig();
   const CONFIG = { ...loadSavedSupabaseConfig(), ...(window.SUPER_SCHEDULE_CONFIG || {}) };
   let plannerSupabase = null;
@@ -527,6 +528,9 @@
     }
 
     if (error) {
+      if (isEmailRateLimitError(error)) {
+        startPlannerEmailCooldown();
+      }
       setPlannerAuthStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
       return;
@@ -536,6 +540,7 @@
       await plannerSupabase.auth.signOut();
     }
 
+    startPlannerEmailCooldown();
     setPlannerAuthStatus("登録メールを送信しました。メール内のリンクを開くと、パスワード設定へ進めます。", "success");
   }
 
@@ -629,10 +634,14 @@
       error = caughtError;
     }
     if (error) {
+      if (isEmailRateLimitError(error)) {
+        startPlannerEmailCooldown();
+      }
       setPlannerAuthStatus(`確認メールを再送できませんでした: ${getErrorText(error)}`, "error");
       animateGate("gate-shake");
       return;
     }
+    startPlannerEmailCooldown();
     setPlannerAuthStatus("登録メールを再送しました。メール内のリンクを開いてください。", "success");
   }
 
@@ -675,6 +684,22 @@
 
   function isFetchFailure(error) {
     return Boolean(error && /failed to fetch|fetch failed|network|load failed/i.test(getRawErrorText(error)));
+  }
+
+  function isEmailRateLimitError(error) {
+    return /rate limit|too many|email rate/i.test(getRawErrorText(error));
+  }
+
+  function startPlannerEmailCooldown() {
+    const buttons = [plannerSignupButton, plannerResendButton].filter(Boolean);
+    buttons.forEach((button) => {
+      button.disabled = true;
+    });
+    window.setTimeout(() => {
+      buttons.forEach((button) => {
+        button.disabled = false;
+      });
+    }, EMAIL_SEND_COOLDOWN_MS);
   }
 
   function unlockWithCode() {
@@ -1353,6 +1378,9 @@
       return "原因不明のエラーです。";
     }
     const message = getRawErrorText(error);
+    if (isEmailRateLimitError(error)) {
+      return "登録メールの送信回数が上限に達しています。少し時間を置いてから、登録メールを再送してください。";
+    }
     if (/failed to fetch|fetch failed|network|load failed/i.test(message)) {
       return "Supabaseに接続できませんでした。プロジェクトURL、公開キー、プロジェクトの停止状態、ネットワーク制限を確認してください。";
     }

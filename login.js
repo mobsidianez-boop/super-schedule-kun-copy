@@ -29,6 +29,7 @@
     facebook: "Instagram/Meta",
   };
   const enabledOAuthProviders = new Set();
+  const EMAIL_SEND_COOLDOWN_MS = 90 * 1000;
 
   init().catch((error) => {
     setStatus(`ログイン画面の準備中にエラーが出ました: ${getErrorText(error)}`, "error");
@@ -160,12 +161,16 @@
       error = caughtError;
     }
     if (error) {
+      if (isEmailRateLimitError(error)) {
+        startEmailCooldown();
+      }
       setStatus(`登録できませんでした: ${getErrorText(error)}`, "error");
       return;
     }
     if (data.session) {
       await client.auth.signOut();
     }
+    startEmailCooldown();
     setStatus("登録メールを送りました。メール内のリンクを開くと、パスワード設定へ進めます。", "success");
   }
 
@@ -195,9 +200,13 @@
       error = caughtError;
     }
     if (error) {
+      if (isEmailRateLimitError(error)) {
+        startEmailCooldown();
+      }
       setStatus(`確認メールを送れませんでした: ${getErrorText(error)}`, "error");
       return;
     }
+    startEmailCooldown();
     setStatus("登録メールを再送しました。メール内のリンクを開いてください。", "success");
   }
 
@@ -375,11 +384,30 @@
     return Boolean(user && (user.email_confirmed_at || user.confirmed_at));
   }
 
+  function isEmailRateLimitError(error) {
+    return /rate limit|too many|email rate/i.test(error && (error.message || error.details || String(error)));
+  }
+
+  function startEmailCooldown() {
+    const buttons = [signupButton, resendButton].filter(Boolean);
+    buttons.forEach((button) => {
+      button.disabled = true;
+    });
+    window.setTimeout(() => {
+      buttons.forEach((button) => {
+        button.disabled = false;
+      });
+    }, EMAIL_SEND_COOLDOWN_MS);
+  }
+
   function getErrorText(error) {
     if (!error) {
       return "原因不明のエラーです";
     }
     const message = error.message || error.details || String(error);
+    if (isEmailRateLimitError(error)) {
+      return "登録メールの送信回数が上限に達しています。少し時間を置いてから、登録メールを再送してください。";
+    }
     if (/failed to fetch|fetch failed|network|load failed/i.test(message)) {
       return "Supabaseに接続できませんでした。Project URL、公開キー、プロジェクト状態を確認してください。";
     }
