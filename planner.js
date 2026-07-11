@@ -1502,18 +1502,7 @@
     setOcrStatus("画像を読み取っています。初回は少し時間がかかります。", 0.02);
 
     try {
-      const ocrSource = await prepareImageForOcr(file);
-      const result = await window.Tesseract.recognize(ocrSource, "jpn+eng", {
-        logger(message) {
-          if (message.status === "recognizing text") {
-            setOcrStatus(`文字を読み取り中 ${Math.round(message.progress * 100)}%`, message.progress);
-          } else if (message.status) {
-            setOcrStatus("OCRを準備しています。", Math.min(Number(message.progress || 0), 0.2));
-          }
-        },
-      });
-
-      const text = cleanOcrText(result.data && result.data.text);
+      const text = await recognizeBestOcrText(file);
       if (!text) {
         setOcrStatus("文字を検出できませんでした。明るく、文字が大きい画像で試してください。", 0);
         return;
@@ -1592,7 +1581,53 @@
     ocrProgress.value = Math.max(0, Math.min(1, Number(progress || 0)));
   }
 
-  async function prepareImageForOcr(file) {
+  async function recognizeBestOcrText(file) {
+    const firstSource = await prepareImageForOcr(file, "balanced");
+    const firstResult = await recognizeOcrSource(firstSource, "読み取り中");
+    const firstText = cleanOcrText(firstResult.data && firstResult.data.text);
+    const firstConfidence = Number(firstResult.data && firstResult.data.confidence);
+    const firstScore = scoreOcrScheduleText(firstText);
+    if (firstText && (firstScore >= 5 || firstConfidence >= 62)) {
+      return firstText;
+    }
+
+    setOcrStatus("別の読み取り方法でも確認しています。", 0.55);
+    const secondSource = await prepareImageForOcr(file, "sharp");
+    const secondResult = await recognizeOcrSource(secondSource, "再読み取り中");
+    const secondText = cleanOcrText(secondResult.data && secondResult.data.text);
+    const secondConfidence = Number(secondResult.data && secondResult.data.confidence);
+    const secondScore = scoreOcrScheduleText(secondText);
+    if (!secondText) {
+      return firstText;
+    }
+    if (!firstText || secondScore > firstScore || secondConfidence > firstConfidence + 8) {
+      return secondText;
+    }
+    return firstText;
+  }
+
+  async function recognizeOcrSource(source, label) {
+    return window.Tesseract.recognize(source, "jpn+eng", {
+      preserve_interword_spaces: "1",
+      tessedit_pageseg_mode: "6",
+      logger(message) {
+        if (message.status === "recognizing text") {
+          setOcrStatus(`${label} ${Math.round(message.progress * 100)}%`, message.progress);
+        } else if (message.status) {
+          setOcrStatus("OCRを準備しています。", Math.min(Number(message.progress || 0), 0.2));
+        }
+      },
+    });
+  }
+
+  function scoreOcrScheduleText(text) {
+    return String(text || "")
+      .split(/\n|。|、/)
+      .map((line) => scoreScheduleLine(normalizeScheduleText(line)))
+      .reduce((sum, score) => sum + Math.max(0, score), 0);
+  }
+
+  async function prepareImageForOcr(file, variant = "balanced") {
     if (!window.createImageBitmap || !document.createElement) {
       return file;
     }
@@ -1612,7 +1647,9 @@
       const image = context.getImageData(0, 0, canvas.width, canvas.height);
       for (let index = 0; index < image.data.length; index += 4) {
         const gray = image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114;
-        const boosted = gray < 148 ? Math.max(0, gray - 28) : Math.min(255, gray + 24);
+        const boosted = variant === "sharp"
+          ? (gray < 170 ? Math.max(0, gray - 46) : Math.min(255, gray + 38))
+          : (gray < 148 ? Math.max(0, gray - 28) : Math.min(255, gray + 24));
         image.data[index] = boosted;
         image.data[index + 1] = boosted;
         image.data[index + 2] = boosted;
@@ -1680,7 +1717,7 @@
     const seen = new Set();
 
     for (const query of searchPlan.queries) {
-      const places = await searchPlacesForQuery(query, Math.min(3, Math.max(1, maxResults)), proximity);
+      const places = await searchPlacesForQuery(query, Math.min(3, Math.max(1, maxResults)), proximity, searchPlan.area);
 
       places.forEach((place) => {
         const key = `${place.provider || ""}:${place.osm_type || ""}:${place.osm_id || ""}:${place.lat || ""}:${place.lon || ""}`;
@@ -1744,15 +1781,15 @@
     };
   }
 
-  async function searchPlacesForQuery(query, limit, proximity = null) {
-    const nominatim = await fetchNominatimPlaces(query, limit, proximity);
+  async function searchPlacesForQuery(query, limit, proximity = null, area = null) {
+    const nominatim = await fetchNominatimPlaces(query, limit, proximity, area);
     if (nominatim.length) {
       return nominatim;
     }
-    return fetchPhotonPlaces(query, limit, proximity);
+    return fetchPhotonPlaces(query, limit, proximity, area);
   }
 
-  async function fetchNominatimPlaces(query, limit, proximity = null) {
+  async function fetchNominatimPlaces(query, limit, proximity = null, area = null) {
     try {
       const params = new URLSearchParams({
         format: "jsonv2",
@@ -1762,15 +1799,16 @@
         extratags: "1",
         "accept-language": "ja",
       });
-      if (proximity) {
-        const span = 0.35;
+      if (proximity || area) {
+        const anchor = proximity || area;
+        const span = anchor.span || 0.35;
         params.set("viewbox", [
-          proximity.lon - span,
-          proximity.lat + span,
-          proximity.lon + span,
-          proximity.lat - span,
+          anchor.lon - span,
+          anchor.lat + span,
+          anchor.lon + span,
+          anchor.lat - span,
         ].join(","));
-        params.set("bounded", "0");
+        params.set("bounded", proximity ? "0" : "1");
       }
       const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
       if (!response.ok) {
@@ -1783,15 +1821,16 @@
     }
   }
 
-  async function fetchPhotonPlaces(query, limit, proximity = null) {
+  async function fetchPhotonPlaces(query, limit, proximity = null, area = null) {
     try {
       const params = new URLSearchParams({
         q: query,
         limit: String(limit),
       });
-      if (proximity) {
-        params.set("lat", String(proximity.lat));
-        params.set("lon", String(proximity.lon));
+      const anchor = proximity || area;
+      if (anchor) {
+        params.set("lat", String(anchor.lat));
+        params.set("lon", String(anchor.lon));
       }
       const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`);
       if (!response.ok) {
@@ -2164,6 +2203,7 @@
     const contextText = getPlaceContextText(event);
     const contextHints = extractPlaceContextHints(`${normalized} ${contextText}`);
     const preferredCountry = inferPreferredCountry(contextHints, `${normalized} ${contextText}`);
+    const area = getPreferredSearchArea(contextHints);
     const searchContext = context || contextHints[0] || "";
     const contextTail = [searchContext, preferredCountry].filter(Boolean).join(" ");
     const queries = uniqueStrings([
@@ -2179,7 +2219,7 @@
       context,
     ]).filter((query) => query.length >= 2);
 
-    return { original: location, normalized, context: searchContext || context, keyword, queries, contextHints, preferredCountry };
+    return { original: location, normalized, context: searchContext || context, keyword, queries, contextHints, preferredCountry, area };
   }
 
   function getPlaceContextText(event) {
@@ -2235,6 +2275,74 @@
       return "日本";
     }
     return "";
+  }
+
+  function getPreferredSearchArea(contextHints) {
+    const areaMap = {
+      北海道: { lat: 43.4, lon: 142.7, span: 3.6 },
+      青森: { lat: 40.8, lon: 140.8, span: 1.1 },
+      岩手: { lat: 39.6, lon: 141.4, span: 1.4 },
+      宮城: { lat: 38.4, lon: 140.9, span: 1.0 },
+      秋田: { lat: 39.7, lon: 140.2, span: 1.1 },
+      山形: { lat: 38.4, lon: 140.1, span: 1.0 },
+      福島: { lat: 37.4, lon: 140.3, span: 1.4 },
+      茨城: { lat: 36.3, lon: 140.3, span: 0.9 },
+      栃木: { lat: 36.7, lon: 139.8, span: 0.9 },
+      群馬: { lat: 36.5, lon: 138.9, span: 0.9 },
+      埼玉: { lat: 36.0, lon: 139.3, span: 0.7 },
+      千葉: { lat: 35.6, lon: 140.2, span: 0.9 },
+      東京: { lat: 35.7, lon: 139.7, span: 0.5 },
+      神奈川: { lat: 35.4, lon: 139.4, span: 0.6 },
+      新潟: { lat: 37.5, lon: 138.8, span: 1.4 },
+      富山: { lat: 36.7, lon: 137.2, span: 0.6 },
+      石川: { lat: 36.8, lon: 136.8, span: 0.9 },
+      福井: { lat: 35.9, lon: 136.2, span: 0.8 },
+      山梨: { lat: 35.6, lon: 138.6, span: 0.7 },
+      長野: { lat: 36.1, lon: 138.0, span: 1.4 },
+      岐阜: { lat: 35.8, lon: 137.0, span: 1.2 },
+      静岡: { lat: 35.0, lon: 138.4, span: 1.0 },
+      愛知: { lat: 35.1, lon: 137.2, span: 0.8 },
+      三重: { lat: 34.5, lon: 136.4, span: 1.0 },
+      滋賀: { lat: 35.2, lon: 136.1, span: 0.6 },
+      京都: { lat: 35.2, lon: 135.5, span: 0.8 },
+      大阪: { lat: 34.7, lon: 135.5, span: 0.5 },
+      兵庫: { lat: 35.0, lon: 134.8, span: 1.0 },
+      奈良: { lat: 34.4, lon: 135.9, span: 0.7 },
+      和歌山: { lat: 33.9, lon: 135.5, span: 0.9 },
+      鳥取: { lat: 35.4, lon: 133.9, span: 0.9 },
+      島根: { lat: 35.1, lon: 132.6, span: 1.1 },
+      岡山: { lat: 34.8, lon: 133.8, span: 0.9 },
+      広島: { lat: 34.6, lon: 132.8, span: 1.0 },
+      山口: { lat: 34.2, lon: 131.5, span: 1.0 },
+      徳島: { lat: 33.9, lon: 134.2, span: 0.8 },
+      香川: { lat: 34.3, lon: 134.0, span: 0.7 },
+      愛媛: { lat: 33.8, lon: 132.8, span: 1.0 },
+      高知: { lat: 33.5, lon: 133.4, span: 1.0 },
+      福岡: { lat: 33.6, lon: 130.6, span: 0.8 },
+      佐賀: { lat: 33.3, lon: 130.1, span: 0.7 },
+      長崎: { lat: 32.8, lon: 129.9, span: 1.0 },
+      熊本: { lat: 32.7, lon: 130.7, span: 0.9 },
+      大分: { lat: 33.2, lon: 131.4, span: 0.9 },
+      宮崎: { lat: 32.0, lon: 131.4, span: 1.0 },
+      鹿児島: { lat: 31.4, lon: 130.6, span: 1.4 },
+      沖縄: { lat: 26.5, lon: 127.9, span: 1.4 },
+      札幌: { lat: 43.06, lon: 141.35, span: 0.35 },
+      仙台: { lat: 38.27, lon: 140.87, span: 0.35 },
+      横浜: { lat: 35.44, lon: 139.64, span: 0.3 },
+      名古屋: { lat: 35.18, lon: 136.91, span: 0.35 },
+      神戸: { lat: 34.69, lon: 135.19, span: 0.35 },
+      広島市: { lat: 34.39, lon: 132.45, span: 0.35 },
+      北九州: { lat: 33.88, lon: 130.88, span: 0.35 },
+      那覇: { lat: 26.21, lon: 127.68, span: 0.3 },
+    };
+    for (const hint of contextHints || []) {
+      const normalized = normalizeScheduleText(hint).replace(/[都道府県市区町村]$/g, "");
+      const foundKey = Object.keys(areaMap).find((key) => normalized === key || normalized.includes(key) || key.includes(normalized));
+      if (foundKey) {
+        return { ...areaMap[foundKey], label: foundKey };
+      }
+    }
+    return null;
   }
 
   function isJapaneseContextHint(value) {
