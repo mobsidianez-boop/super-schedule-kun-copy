@@ -1246,9 +1246,11 @@
     if (!normalized) {
       return null;
     }
+    const routeMode = detectRouteMode(normalized);
     const timeMatch = normalized.match(/^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])[:：][0-5]\d|^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])時(?:[0-5]?\d分?)?/);
     const time = timeMatch ? (detectTime(timeMatch[0]) || "") : "";
     const rest = cleanText(timeMatch ? normalized.slice(timeMatch[0].length) : normalized, 100)
+      .replace(/^\[(車|徒歩|公共交通|バス|電車|フェリー|船|飛行機|航空|drive|car|walk|transit|bus|train|ferry|ship|boat|flight|air)\]\s*/i, "")
       .replace(/^[\s、。・:：-]+/, "");
     const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || rest.split(/\s+/)[0] || rest);
     const note = cleanText(location ? rest.replace(location, "") : rest, 48)
@@ -1264,12 +1266,13 @@
       title: note || `${location}で予定`,
       place: null,
       placePending: true,
+      routeMode,
     };
   }
 
   function formatStopsInput(stops) {
     return getEventStops(stops)
-      .map((stop) => [stop.time, stop.location, stop.title].filter(Boolean).join(" "))
+      .map((stop) => [stop.time, stop.routeMode && stop.routeMode !== "auto" ? `[${getRouteModeLabel(stop.routeMode)}]` : "", stop.location, stop.title].filter(Boolean).join(" "))
       .join("\n");
   }
 
@@ -1278,7 +1281,7 @@
     return nextStops.map((stop) => {
       const match = previous.find((item) => item.time === stop.time && item.location === stop.location && item.title === stop.title)
         || previous.find((item) => item.time === stop.time && item.location === stop.location);
-      return match ? { ...stop, id: match.id, place: match.place || null, placePending: !match.place } : stop;
+      return match ? { ...stop, id: match.id, place: match.place || null, placePending: !match.place, routeMode: normalizeRouteMode(stop.routeMode || match.routeMode) } : stop;
     });
   }
 
@@ -1818,12 +1821,26 @@
       lon,
       distanceFromAnchorKm,
       category: [place.category, place.type].filter(Boolean).join(" / "),
+      country: getPlaceCountry(place),
       mapUrl,
       googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`,
       crowd: null,
       source: `${place.provider || "OpenStreetMap"}の場所情報です。${proximity ? "同じ予定内で確定済みの場所の近隣も手がかりにしています。" : ""}リアルタイム混雑はライブデータAPIが設定された場合だけ表示します。`,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  function getPlaceCountry(place) {
+    if (!place || typeof place !== "object") {
+      return "";
+    }
+    if (place.address && place.address.country) {
+      return String(place.address.country);
+    }
+    if (place.country) {
+      return String(place.country);
+    }
+    return "";
   }
 
   function getPlaceSearchProximity(event) {
@@ -1862,6 +1879,35 @@
     return Math.round(earthRadiusKm * c * 10) / 10;
   }
 
+  function normalizeRouteMode(value) {
+    const mode = String(value || "auto").trim().toLowerCase();
+    if (["walk", "walking", "徒歩"].includes(mode)) return "walk";
+    if (["transit", "bus", "train", "公共交通", "バス", "電車"].includes(mode)) return "transit";
+    if (["ferry", "ship", "boat", "フェリー", "船"].includes(mode)) return "ferry";
+    if (["flight", "air", "plane", "飛行機", "航空"].includes(mode)) return "flight";
+    if (["drive", "car", "車", "自動車"].includes(mode)) return "drive";
+    return "auto";
+  }
+
+  function getRouteModeLabel(mode) {
+    const normalized = normalizeRouteMode(mode);
+    if (normalized === "walk") return "徒歩";
+    if (normalized === "transit") return "公共交通";
+    if (normalized === "ferry") return "フェリー";
+    if (normalized === "flight") return "飛行機";
+    if (normalized === "drive") return "車";
+    return "自動";
+  }
+
+  function detectRouteMode(text) {
+    if (/飛行機|航空|\[flight\]|\[air\]/i.test(text)) return "flight";
+    if (/フェリー|船|\[ferry\]|\[ship\]|\[boat\]/i.test(text)) return "ferry";
+    if (/徒歩|\[walk\]/i.test(text)) return "walk";
+    if (/公共交通|バス|電車|\[transit\]|\[bus\]|\[train\]/i.test(text)) return "transit";
+    if (/車|自動車|\[drive\]|\[car\]/i.test(text)) return "drive";
+    return "auto";
+  }
+
   function getEventStops(eventOrStops) {
     const stops = Array.isArray(eventOrStops) ? eventOrStops : eventOrStops && Array.isArray(eventOrStops.stops) ? eventOrStops.stops : [];
     return stops
@@ -1872,6 +1918,7 @@
         location: cleanLocation(stop.location || ""),
         place: stop.place || null,
         placePending: Boolean(stop.placePending),
+        routeMode: normalizeRouteMode(stop.routeMode),
       }))
       .filter((stop) => stop.location);
   }
@@ -1895,6 +1942,7 @@
         time: event.start || "",
         location: event.location,
         place: event.place,
+        routeMode: normalizeRouteMode(event.routeMode),
         kind: "main",
         event,
       });
@@ -1907,6 +1955,7 @@
         time: stop.time,
         location: stop.location,
         place: stop.place,
+        routeMode: normalizeRouteMode(stop.routeMode),
         kind: "stop",
         stop,
         event,
@@ -1967,17 +2016,31 @@
         const distanceText = Number.isFinite(candidate.distanceFromAnchorKm)
           ? `\n近隣ヒントからの距離: 約${candidate.distanceFromAnchorKm}km`
           : "";
-        const ok = window.confirm(`この場所で合っていますか？\n\n${candidate.displayName}\n\n検索した固有名詞: ${candidate.searchParts.keyword || query}\n住所の手がかり: ${candidate.searchParts.context || "なし"}${distanceText}`);
+        const countryText = candidate.country ? `\n国: ${candidate.country}` : "\n国: 不明";
+        const ok = window.confirm(`この場所で合っていますか？\n\n${candidate.displayName}${countryText}\n\n検索した固有名詞: ${candidate.searchParts.keyword || query}\n住所の手がかり: ${candidate.searchParts.context || "なし"}${distanceText}`);
         if (ok) {
           return candidate;
         }
       }
 
+      const isPlace = window.confirm(`「${query}」は予定の場所として登録する情報ですか？\n\n候補が全部違う場合、そもそも場所ではないならキャンセルしてください。`);
+      if (!isPlace) {
+        return {
+          query: location,
+          displayName: location,
+          nonPlace: true,
+          crowd: null,
+          source: "場所ではないと確認されたため、場所として登録しません。",
+          fetchedAt: new Date().toISOString(),
+        };
+      }
+
+      const country = window.prompt("候補が全部違う場合、可能性のある国名を入力してください。例: 日本、韓国、アメリカ", "日本");
       const nextQuery = window.prompt("別の候補を探します。場所名や施設名、住所の手がかりを入力してください。", query);
       if (!nextQuery || !cleanText(nextQuery, 80)) {
         break;
       }
-      query = cleanText(nextQuery, 80);
+      query = cleanText([nextQuery, country].filter(Boolean).join(" "), 80);
     }
 
     return {
@@ -2077,6 +2140,7 @@
       const place = event.location && event.placePending && !event.place
         ? await confirmPlaceCandidate(event.location, event)
         : event.place;
+      const mainLocation = place && place.nonPlace ? "" : event.location;
       if (hasUsablePlace(place)) {
         knownPlaces.push(place);
       }
@@ -2086,13 +2150,16 @@
         const stopPlace = stop.placePending && !stop.place
           ? await confirmPlaceCandidate(stop.location, contextEvent)
           : stop.place;
+        if (stopPlace && stopPlace.nonPlace) {
+          continue;
+        }
         if (hasUsablePlace(stopPlace)) {
           knownPlaces.push(stopPlace);
         }
         stops.push({ ...stop, place: stopPlace || stop.place || null, placePending: false });
       }
       events = events.map((item) => item.id === event.id
-        ? { ...item, place, placePending: false, stops, stopsPending: false }
+        ? { ...item, location: mainLocation, place: place && place.nonPlace ? null : place, placePending: false, stops, stopsPending: false }
         : item);
       saveEvents();
       render();
@@ -2228,7 +2295,7 @@
 
         try {
           setRouteStatus(`${previous.title} から ${target.location} への道路ルートを調べています。`);
-          const route = await fetchRouteEstimate(previous.place, target.place, target.event);
+          const route = await fetchSegmentRouteEstimate(previous.place, target.place, target.event, target);
           routeResults.push({ event: target.event, target, route, fromLabel: previous.title });
           drawRouteLine(target, route);
         } catch (error) {
@@ -2279,6 +2346,40 @@
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 5 * 60 * 1000 },
       );
     });
+  }
+
+  async function fetchSegmentRouteEstimate(from, place, event = null, target = null) {
+    const mode = normalizeRouteMode(target && target.routeMode);
+    if (mode === "ferry" || mode === "flight") {
+      return buildDirectTransportRoute(from, place, event, mode);
+    }
+    const route = await fetchRouteEstimate(from, place, event);
+    return { ...route, routeMode: mode === "auto" ? "drive" : mode };
+  }
+
+  function buildDirectTransportRoute(from, place, event, mode) {
+    const distanceKm = calculateDistanceKm(from, place);
+    const speed = mode === "flight" ? 620 : 32;
+    const terminalBuffer = mode === "flight" ? 90 : 35;
+    const durationMinutes = Math.max(1, Math.round((distanceKm / speed) * 60 + terminalBuffer));
+    const geometry = {
+      type: "LineString",
+      coordinates: [
+        [Number(from.lon), Number(from.lat)],
+        [Number(place.lon), Number(place.lat)],
+      ],
+    };
+    return {
+      durationMinutes,
+      distanceKm,
+      geometry,
+      routeMode: mode,
+      modes: [{ label: getRouteModeLabel(mode), minutes: durationMinutes, note: mode === "flight" ? "空港での手続き時間を含む目安" : "港での待ち時間を含む目安" }],
+      traffic: { segments: [], note: mode === "flight" ? "飛行機区間は道路渋滞の対象外です。" : "フェリー区間は道路渋滞の対象外です。" },
+      trafficNote: mode === "flight" ? "飛行機区間は道路渋滞の対象外です。" : "フェリー区間は道路渋滞の対象外です。",
+      weather: null,
+      note: mode === "flight" ? "飛行機区間です。空港まで/空港からの移動は別の小項目として空港を登録してください。" : "フェリー区間です。港まで/港からの移動は別の小項目として港を登録してください。",
+    };
   }
 
   async function fetchRouteEstimate(current, place, event = null) {
@@ -2630,10 +2731,27 @@
       return;
     }
     const line = window.L.geoJSON(route.geometry, {
-      style: { color: getEventColor(target.eventId), weight: 5, opacity: 0.78 },
+      style: getRouteLineStyle(target, route),
     }).addTo(plannerMap);
     routeLines.push(line);
     drawTrafficSegments(route);
+  }
+
+  function getRouteLineStyle(target, route) {
+    const mode = normalizeRouteMode(route && route.routeMode || target && target.routeMode);
+    if (mode === "ferry") {
+      return { color: "#0891b2", weight: 5, opacity: 0.82, dashArray: "10 8" };
+    }
+    if (mode === "flight") {
+      return { color: "#7c3aed", weight: 5, opacity: 0.82, dashArray: "2 9" };
+    }
+    if (mode === "walk") {
+      return { color: "#16a34a", weight: 5, opacity: 0.78, dashArray: "3 7" };
+    }
+    if (mode === "transit") {
+      return { color: "#2563eb", weight: 5, opacity: 0.78, dashArray: "12 4 3 4" };
+    }
+    return { color: getEventColor(target.eventId), weight: 5, opacity: 0.78 };
   }
 
   function drawTrafficSegments(route) {
@@ -2838,7 +2956,7 @@
 
       clearRouteAndEventLayers();
       updateCurrentPositionMarker(current);
-      const route = await fetchRouteEstimate(current, target.place, updatedEvent);
+      const route = await fetchSegmentRouteEstimate(current, target.place, updatedEvent, target);
       drawEventRoute(target, route, true);
       renderRouteList([{ event: updatedEvent, target, route, selected: true }]);
       fitMapToContent(current, [{ target }]);
@@ -2899,7 +3017,7 @@
         const fromLabel = from.time ? `${from.time} ${from.title}` : from.title;
         try {
           setRouteStatus(`${fromLabel} から ${target.location} への道路ルートを調べています。`);
-          const route = await fetchRouteEstimate(from.place, target.place, updatedEvent);
+          const route = await fetchSegmentRouteEstimate(from.place, target.place, updatedEvent, target);
           routeResults.push({ event: updatedEvent, target, route, fromLabel });
           drawRouteLine(target, route);
         } catch (error) {
@@ -2983,7 +3101,8 @@
       item.append(title);
 
       if (route) {
-        item.append(createTextSpan(`${routeTarget.location}: 車で約${route.durationMinutes}分 / ${route.distanceKm}km`));
+        const modeLabel = getRouteModeLabel(route.routeMode || routeTarget.routeMode || "drive");
+        item.append(createTextSpan(`${routeTarget.location}: ${modeLabel}で約${route.durationMinutes}分 / ${route.distanceKm}km`));
         if (Array.isArray(route.modes)) {
           route.modes.forEach((mode) => {
             item.append(createTextSpan(`${mode.label}: 約${mode.minutes}分（${mode.note}）`));
@@ -2993,6 +3112,9 @@
         item.append(createTextSpan(`渋滞情報: ${route.trafficNote}`));
         if (route.traffic && route.traffic.segments && route.traffic.segments.length) {
           item.append(createTextSpan("赤いルート線が渋滞区間です。"));
+        }
+        if (route.note) {
+          item.append(createTextSpan(route.note));
         }
         item.append(createTextSpan(formatWeatherText(route.weather)));
       } else {
@@ -3410,6 +3532,9 @@
       candidatePlace.append(createTextBlock(`座標目安: ${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`));
     } else {
       candidatePlace.append(createTextBlock("座標目安: 取得できませんでした"));
+    }
+    if (place.country) {
+      candidatePlace.append(createTextBlock(`国: ${place.country}`));
     }
     if (Number.isFinite(place.distanceFromAnchorKm)) {
       candidatePlace.append(createTextBlock(`確定済みの場所から約${place.distanceFromAnchorKm}km`));
@@ -3862,7 +3987,7 @@
         location = inferredLocation;
       }
     }
-    const stopsText = window.prompt("時刻別の場所を1行ずつ入力してください。\n例: 13:00 渋谷駅 集合", formatStopsInput(target));
+    const stopsText = window.prompt("時刻別の場所を1行ずつ入力してください。\n移動手段を後付けする場合は、行の先頭に [フェリー] や [飛行機] を付けます。\n例: 13:00 [フェリー] 高松港 出発\n例: 15:30 [飛行機] 羽田空港 到着", formatStopsInput(target));
     if (stopsText === null) return;
     const stops = mergeEditedStops(target, parseStopsInput(stopsText));
     const notifyLeadMinutes = promptNumber("通知タイミング（開始何分前）", getNotifyLeadMinutes(target), 0, 240);

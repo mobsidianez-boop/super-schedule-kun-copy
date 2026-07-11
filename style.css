@@ -1508,6 +1508,32 @@ h3 {
   box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.12);
 }
 
+.legend-walk,
+.legend-transit,
+.legend-ferry,
+.legend-flight {
+  width: 28px;
+  height: 5px;
+  border-radius: 999px;
+  background-size: 12px 5px;
+}
+
+.legend-walk {
+  background-image: repeating-linear-gradient(90deg, #16a34a 0 3px, transparent 3px 7px);
+}
+
+.legend-transit {
+  background-image: repeating-linear-gradient(90deg, #2563eb 0 12px, transparent 12px 16px, #2563eb 16px 19px, transparent 19px 23px);
+}
+
+.legend-ferry {
+  background-image: repeating-linear-gradient(90deg, #0891b2 0 10px, transparent 10px 18px);
+}
+
+.legend-flight {
+  background-image: repeating-linear-gradient(90deg, #7c3aed 0 2px, transparent 2px 9px);
+}
+
 .route-list {
   display: grid;
   gap: 10px;

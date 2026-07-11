@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=route-overview-2">
+  <link rel="stylesheet" href="style.css?v=transport-routes-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -214,6 +214,10 @@
           <span><i class="legend-event"></i>予定場所</span>
           <span><i class="legend-route"></i>移動ルート</span>
           <span><i class="legend-traffic"></i>渋滞区間</span>
+          <span><i class="legend-walk"></i>徒歩</span>
+          <span><i class="legend-transit"></i>公共交通</span>
+          <span><i class="legend-ferry"></i>フェリー</span>
+          <span><i class="legend-flight"></i>飛行機</span>
         </div>
         <ul class="route-list" id="route-list"></ul>
         <section class="schedule-board" aria-label="表示日のスケジュール表">
@@ -395,7 +399,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=route-overview-2"></script>
+  <script src="planner.js?v=transport-routes-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
