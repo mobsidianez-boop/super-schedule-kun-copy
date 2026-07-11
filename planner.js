@@ -344,7 +344,7 @@
     plannerSupabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
         if (isEmailVerified(session.user)) {
-          unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session });
+          unlockPlanner("ログイン中です。予定管理を使えます。", { mode: "user", session });
         } else {
           await plannerSupabase.auth.signOut();
           lockPlanner();
@@ -362,7 +362,7 @@
         setPlannerAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
         return;
       }
-      unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
+      unlockPlanner("ログイン中です。予定管理を使えます。", { mode: "user", session: data.session });
       return;
     }
 
@@ -411,7 +411,7 @@
       return;
     }
     if (data && data.session) {
-      unlockPlanner("ログイン中です。予定アプリを使えます。", { mode: "user", session: data.session });
+      unlockPlanner("ログイン中です。予定管理を使えます。", { mode: "user", session: data.session });
     }
   }
 
@@ -680,7 +680,7 @@
     if (plannerLogoutButton) {
       plannerLogoutButton.hidden = true;
     }
-    setPlannerAuthStatus("予定アプリはログイン後に使えます。", "warning");
+    setPlannerAuthStatus("予定管理はログイン後に使えます。", "warning");
   }
 
   async function unlockPlanner(message, options = {}) {
@@ -1657,14 +1657,11 @@
     const date = viewDateInput.value || today;
     return events
       .filter((item) => item.date === date)
-      .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+      .sort(compareEventsByDateTime);
   }
 
   function getActiveEvents() {
-    return [...events].sort((a, b) => {
-      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
-      return dateCompare || timeToMinutes(a.start) - timeToMinutes(b.start);
-    });
+    return [...events].sort(compareEventsByDateTime);
   }
 
   function getCurrentPosition() {
@@ -2316,11 +2313,11 @@
     candidateTitle.textContent = candidate.title;
     candidateMeta.textContent = [
       formatDate(candidate.date),
-      `${candidate.start}-${candidate.end}`,
+      getEventTimeLabel(candidate),
       candidate.location ? `場所: ${candidate.location}` : "場所未設定",
       candidate.travelMinutes ? `移動${candidate.travelMinutes}分` : "移動なし",
       candidate.inferredDate ? "日付は今日で仮設定" : "",
-      candidate.inferredTime ? "時刻は10:00で仮設定" : "",
+      candidate.inferredTime ? "時刻が不明です。あとで編集できます" : "",
     ].filter(Boolean).join(" / ");
     renderPlaceIntel(candidate.place);
     candidateBox.hidden = false;
@@ -2403,7 +2400,7 @@
     const date = viewDateInput.value || today;
     const dayEvents = events
       .filter((item) => item.date === date)
-      .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+      .sort(compareEventsByDateTime);
 
     renderTimeline(dayEvents);
     renderFreeTime(dayEvents);
@@ -2420,10 +2417,7 @@
       return;
     }
     allEventsList.replaceChildren();
-    const sorted = [...events].sort((a, b) => {
-      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
-      return dateCompare || timeToMinutes(a.start) - timeToMinutes(b.start);
-    });
+    const sorted = [...events].sort(compareEventsByDateTime);
     if (!sorted.length) {
       allEventsList.append(createListItem("登録されている予定はありません。"));
       return;
@@ -2436,9 +2430,15 @@
       const meta = document.createElement("span");
       meta.textContent = [
         formatDate(event.date),
-        `${event.start}-${event.end}`,
+        getEventTimeLabel(event),
         event.location ? `場所: ${event.location}` : "場所未設定",
       ].join(" / ");
+      if (event.inferredTime) {
+        const note = document.createElement("span");
+        note.className = "time-missing-note";
+        note.textContent = "時刻が不明です";
+        meta.append(document.createElement("br"), note);
+      }
       const actions = document.createElement("div");
       actions.className = "event-actions";
       const routeButton = createSmallButton("地図", () => showEventRouteDetails(event.id));
@@ -2473,7 +2473,7 @@
     const timedEvents = dayEvents.filter((event) => hasExactTime(event));
     const floatingEvents = dayEvents.filter((event) => !hasExactTime(event));
     if (scheduleTableStatus) {
-      scheduleTableStatus.textContent = `${timedEvents.length}件を時間帯に表示 / 時間不明 ${floatingEvents.length}件`;
+      scheduleTableStatus.textContent = `${timedEvents.length}件を時間帯に表示 / 時刻が不明な予定 ${floatingEvents.length}件`;
     }
 
     const rangeStart = getScheduleRangeStart(timedEvents, date);
@@ -2536,11 +2536,11 @@
 
     if (floatingEvents.length) {
       const title = document.createElement("strong");
-      title.textContent = "時間不明の予定";
+      title.textContent = "時刻が不明な予定";
       const list = document.createElement("ul");
       floatingEvents.forEach((event) => {
         const item = document.createElement("li");
-        item.textContent = `${event.title}${event.location ? ` / 場所: ${event.location}` : ""}`;
+        item.textContent = `${event.title} / 時刻が不明です${event.location ? ` / 場所: ${event.location}` : ""}`;
         item.addEventListener("click", () => editEvent(event.id));
         list.append(item);
       });
@@ -2550,6 +2550,26 @@
 
   function hasExactTime(event) {
     return Boolean(event.start && event.end && !event.inferredTime && timeToMinutes(event.end) > timeToMinutes(event.start));
+  }
+
+  function getEventTimeLabel(event) {
+    if (event && event.inferredTime) {
+      return "時刻未定";
+    }
+    if (event && event.start && event.end) {
+      return `${event.start}-${event.end}`;
+    }
+    return "時刻未定";
+  }
+
+  function compareEventsByDateTime(a, b) {
+    const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+    if (dateCompare) {
+      return dateCompare;
+    }
+    const aTime = hasExactTime(a) ? timeToMinutes(a.start) : 24 * 60;
+    const bTime = hasExactTime(b) ? timeToMinutes(b.start) : 24 * 60;
+    return aTime - bTime;
   }
 
   function getScheduleRangeStart(timedEvents, date) {
@@ -2577,7 +2597,7 @@
     }
 
     dayEvents.forEach((item) => {
-      if (item.travelMinutes > 0) {
+      if (item.travelMinutes > 0 && hasExactTime(item)) {
         timelineBoard.append(createTimelineRow(
           minutesToTime(Math.max(DAY_START, timeToMinutes(item.start) - item.travelMinutes)),
           `${item.title} まで移動`,
@@ -2586,7 +2606,7 @@
         ));
       }
       timelineBoard.append(createTimelineRow(
-        `${item.start}-${item.end}`,
+        getEventTimeLabel(item),
         item.title,
         makeEventMeta(item),
         false,
@@ -2597,6 +2617,9 @@
 
   function makeEventMeta(item) {
     const parts = [item.location ? `場所: ${item.location}` : "場所未設定"];
+    if (item.inferredTime) {
+      parts.unshift("時刻が不明です");
+    }
     if (item.place && Number.isFinite(item.place.lat) && Number.isFinite(item.place.lon)) {
       parts.push(`座標: ${item.place.lat.toFixed(4)}, ${item.place.lon.toFixed(4)}`);
     }
@@ -2612,6 +2635,7 @@
   function renderFreeTime(dayEvents) {
     freeTimeList.innerHTML = "";
     const busyBlocks = dayEvents
+      .filter((item) => hasExactTime(item))
       .map((item) => ({
         start: Math.max(DAY_START, timeToMinutes(item.start) - Number(item.travelMinutes || 0)),
         end: Math.min(DAY_END, timeToMinutes(item.end)),
@@ -3020,7 +3044,7 @@
     if (plannerStorageMode === "test") {
       return;
     }
-    if (!event || !event.date || !event.start || !event.place) {
+    if (!event || !event.date || !event.start || event.inferredTime || !event.place) {
       return;
     }
     if (!("Notification" in window)) {

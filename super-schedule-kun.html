@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=login-page-1">
+  <link rel="stylesheet" href="style.css?v=unknown-time-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -15,7 +15,7 @@
     </a>
     <nav class="nav" aria-label="ページナビゲーション">
       <a class="active" href="super-schedule-kun.html">ホーム</a>
-      <a href="login.html">アプリを使う</a>
+      <a href="login.html">予定管理を始める</a>
       <a href="features.html">機能</a>
       <a href="use-cases.html">活用シーン</a>
     </nav>
@@ -28,7 +28,7 @@
         <h1>予定に追われる毎日を、余白のある一日に。</h1>
         <p class="lead">
           超スケジュールくんは、メッセージ文や手入力から予定を整理して、
-          登録、空き時間、移動メモまでまとめて扱えるスケジュールアプリです。
+          登録、空き時間、移動メモまでまとめて扱える予定管理ツールです。
         </p>
         <div class="hero-note">
           <span>文章</span>
@@ -37,15 +37,15 @@
           <span>移動時間</span>
         </div>
         <div class="actions">
-          <a class="button primary" href="login.html">アプリを使う</a>
+          <a class="button primary" href="login.html">予定管理を始める</a>
           <a class="button" href="use-cases.html">使い方を見る</a>
         </div>
       </div>
 
-      <div class="phone" aria-label="アプリ画面イメージ">
+      <div class="phone" aria-label="予定管理画面イメージ">
         <div class="phone-head">
           <span>超スケジュールくん</span>
-          <span class="status">APP</span>
+          <span class="status">予定管理</span>
         </div>
         <div class="screen">
           <div class="mini-card phone-auth-card">
@@ -80,15 +80,14 @@
 
     <section class="section planner" id="planner" aria-labelledby="planner-title">
       <div class="section-head">
-        <p class="eyebrow">APP</p>
+        <p class="eyebrow">WORKSPACE</p>
         <h2 id="planner-title">予定ワークスペース</h2>
         <p class="board-intro">予定を登録し、メッセージ文や画像から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
-        <button class="button planner-logout-button" type="button" id="planner-logout-button" hidden>ログアウト</button>
       </div>
 
       <div class="auth-panel planner-gate" id="planner-gate">
         <div class="planner-panel-head">
-          <h3>予定アプリを使う</h3>
+          <h3>予定管理を使う</h3>
           <span class="planner-hint">初回は新規登録してください</span>
         </div>
         <form class="auth-form" id="planner-auth-form">
@@ -127,10 +126,13 @@
           </label>
           <button class="button" type="button" id="planner-supabase-save-button">接続設定を保存</button>
         </details>
-        <p class="auth-status" id="planner-auth-status">予定アプリはログイン後に使えます。</p>
+        <p class="auth-status" id="planner-auth-status">予定管理はログイン後に使えます。</p>
       </div>
 
       <div id="planner-app" hidden>
+      <div class="planner-app-topbar">
+        <button class="button planner-logout-button" type="button" id="planner-logout-button" hidden>ログアウト</button>
+      </div>
       <div class="planner-layout">
         <div class="planner-panel">
           <div class="planner-panel-head">
@@ -399,7 +401,7 @@
       authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html"
     };
   </script>
-  <script src="planner.js?v=login-page-1"></script>
+  <script src="planner.js?v=unknown-time-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
