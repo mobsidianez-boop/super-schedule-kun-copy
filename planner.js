@@ -1619,9 +1619,9 @@
       return firstText;
     }
 
-    setOcrStatus("別の読み取り方法でも確認しています。", 0.55);
-    const secondSource = await prepareImageForOcr(file, "sharp");
-    const secondResult = await recognizeOcrSource(secondSource, "再読み取り中");
+    setOcrStatus("文字色を優先して再確認しています。", 0.55);
+    const secondSource = await prepareImageForOcr(file, "colorText");
+    const secondResult = await recognizeOcrSource(secondSource, "文字色読み取り中");
     const secondText = cleanOcrText(secondResult.data && secondResult.data.text);
     const secondConfidence = Number(secondResult.data && secondResult.data.confidence);
     const secondScore = scoreOcrScheduleText(secondText);
@@ -1709,9 +1709,15 @@
       context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       const image = context.getImageData(0, 0, canvas.width, canvas.height);
       for (let index = 0; index < image.data.length; index += 4) {
-        const gray = image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114;
-        const boosted = variant === "sharp"
-          ? (gray < 170 ? Math.max(0, gray - 46) : Math.min(255, gray + 38))
+        const red = image.data[index];
+        const green = image.data[index + 1];
+        const blue = image.data[index + 2];
+        const gray = red * 0.299 + green * 0.587 + blue * 0.114;
+        const max = Math.max(red, green, blue);
+        const min = Math.min(red, green, blue);
+        const saturation = max - min;
+        const boosted = variant === "colorText"
+          ? getColorTextPixelValue(image, index, canvas.width, canvas.height, gray, saturation)
           : (gray < 148 ? Math.max(0, gray - 28) : Math.min(255, gray + 24));
         image.data[index] = boosted;
         image.data[index + 1] = boosted;
@@ -1722,6 +1728,48 @@
     } catch {
       return file;
     }
+  }
+
+  function getColorTextPixelValue(image, index, width, height, gray, saturation) {
+    const pixel = index / 4;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    const neighborGap = getLocalContrastGap(image.data, x, y, width, height, gray);
+    const darkText = gray < 150 && neighborGap > 22;
+    const saturatedText = saturation > 42 && gray < 205 && neighborGap > 18;
+    const likelyIllustrationFill = saturation > 55 && neighborGap <= 18 && gray > 95;
+    if (darkText || saturatedText) {
+      return Math.max(0, gray - 58);
+    }
+    if (likelyIllustrationFill || gray > 186 || neighborGap < 12) {
+      return 255;
+    }
+    return gray < 132 ? Math.max(0, gray - 28) : 245;
+  }
+
+  function getLocalContrastGap(data, x, y, width, height, gray) {
+    let minGray = gray;
+    let maxGray = gray;
+    const offsets = [
+      [-2, 0],
+      [2, 0],
+      [0, -2],
+      [0, 2],
+      [-2, -2],
+      [2, 2],
+    ];
+    offsets.forEach(([dx, dy]) => {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+        return;
+      }
+      const neighborIndex = (ny * width + nx) * 4;
+      const neighborGray = data[neighborIndex] * 0.299 + data[neighborIndex + 1] * 0.587 + data[neighborIndex + 2] * 0.114;
+      minGray = Math.min(minGray, neighborGray);
+      maxGray = Math.max(maxGray, neighborGray);
+    });
+    return maxGray - minGray;
   }
 
   function cleanOcrText(value) {
