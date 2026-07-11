@@ -115,6 +115,26 @@ a {
   background: var(--teal);
 }
 
+.header-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: var(--warm);
+  font-size: 15px;
+  font-weight: 1000;
+  white-space: nowrap;
+  box-shadow: 0 12px 24px rgba(255, 92, 138, 0.24);
+}
+
+.header-cta:hover,
+.header-cta:focus-visible {
+  background: var(--teal);
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(320px, 0.88fr);
@@ -2236,6 +2256,10 @@ footer {
   .nav {
     width: 100%;
     overflow-x: auto;
+  }
+
+  .header-cta {
+    width: 100%;
   }
 
   .login-shell {
