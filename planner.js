@@ -810,7 +810,6 @@
 
   function getPasswordSetupRedirectUrl() {
     const url = new URL(CONFIG.authRedirectUrl || window.location.href, window.location.href);
-    url.searchParams.set("set_password", "1");
     return url.toString();
   }
 
