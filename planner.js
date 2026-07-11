@@ -1113,7 +1113,8 @@
       return null;
     }
     const location = detectedStops.length ? "" : (detectedLocation || inferLocationFromTitle(title));
-    title = normalizeDetectedTitle(title, location, scheduleText);
+    const sourceText = cleanText(`${scheduleText}\n${relevantRawText}\n${rawScheduleText}`, 900);
+    title = normalizeDetectedTitle(title, location, sourceText);
     if (!title || title === location) {
       setDetectMessage("用事の名前を検出できませんでした。日時と用事名が分かる文章で試してください。");
       return null;
@@ -1127,6 +1128,7 @@
       end,
       location,
       stops: detectedStops,
+      sourceText,
       travelMinutes: 0,
       notifyLeadMinutes: 30,
       inferredDate: !detectedDate,
@@ -1650,7 +1652,7 @@
   }
 
   async function fetchPlaceCandidates(location, event, maxResults = 5) {
-    const searchPlan = buildPlaceSearchQueries(location);
+    const searchPlan = buildPlaceSearchQueries(location, event);
     const proximity = getPlaceSearchProximity(event);
     const directCoordinates = parseCoordinatesFromText(location);
     if (directCoordinates) {
@@ -1676,15 +1678,7 @@
       }
     }
 
-    if (proximity) {
-      results.sort((a, b) => {
-        const aDistance = Number.isFinite(a.distanceFromAnchorKm) ? a.distanceFromAnchorKm : Number.POSITIVE_INFINITY;
-        const bDistance = Number.isFinite(b.distanceFromAnchorKm) ? b.distanceFromAnchorKm : Number.POSITIVE_INFINITY;
-        return aDistance - bDistance;
-      });
-    }
-
-    return results.slice(0, maxResults);
+    return rankPlaceCandidates(results, searchPlan, proximity).slice(0, maxResults);
   }
 
   function parseCoordinatesFromText(value) {
@@ -1806,6 +1800,7 @@
           lon: coordinates[0],
           category: props.osm_key || "",
           type: props.osm_value || props.type || "",
+          country: props.country || "",
           osm_type: props.osm_type,
           osm_id: props.osm_id,
         };
@@ -1838,6 +1833,7 @@
       distanceFromAnchorKm,
       category: [place.category, place.type].filter(Boolean).join(" / "),
       country: getPlaceCountry(place),
+      contextScore: scorePlaceCandidate(place, searchPlan),
       mapUrl,
       googleMapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.display_name || searchQuery || originalQuery)}`,
       crowd: null,
@@ -1857,6 +1853,78 @@
       return String(place.country);
     }
     return "";
+  }
+
+  function rankPlaceCandidates(results, searchPlan, proximity) {
+    let ranked = Array.isArray(results) ? [...results] : [];
+    if (searchPlan && searchPlan.preferredCountry) {
+      const preferred = ranked.filter((candidate) => isPreferredCountryCandidate(candidate, searchPlan.preferredCountry));
+      if (preferred.length) {
+        ranked = preferred;
+      }
+    }
+
+    ranked.sort((a, b) => {
+      const scoreDiff = Number(b.contextScore || 0) - Number(a.contextScore || 0);
+      if (scoreDiff) {
+        return scoreDiff;
+      }
+      if (proximity) {
+        const aDistance = Number.isFinite(a.distanceFromAnchorKm) ? a.distanceFromAnchorKm : Number.POSITIVE_INFINITY;
+        const bDistance = Number.isFinite(b.distanceFromAnchorKm) ? b.distanceFromAnchorKm : Number.POSITIVE_INFINITY;
+        if (aDistance !== bDistance) {
+          return aDistance - bDistance;
+        }
+      }
+      return String(a.displayName || "").length - String(b.displayName || "").length;
+    });
+    return ranked;
+  }
+
+  function scorePlaceCandidate(place, searchPlan) {
+    if (!place || !searchPlan) {
+      return 0;
+    }
+    const display = normalizeScheduleText([
+      place.display_name,
+      place.country,
+      place.address && place.address.country,
+      place.address && place.address.state,
+      place.address && place.address.city,
+      place.address && place.address.town,
+      place.address && place.address.village,
+    ].filter(Boolean).join(" "));
+    let score = 0;
+    if (searchPlan.preferredCountry && isPreferredCountryCandidate(place, searchPlan.preferredCountry)) {
+      score += 30;
+    }
+    (searchPlan.contextHints || []).forEach((hint) => {
+      if (hint && display.includes(hint)) {
+        score += 12;
+      }
+    });
+    if (searchPlan.context && display.includes(searchPlan.context)) {
+      score += 10;
+    }
+    if (searchPlan.keyword && display.includes(searchPlan.keyword)) {
+      score += 4;
+    }
+    if (searchPlan.normalized && display.includes(searchPlan.normalized)) {
+      score += 2;
+    }
+    return score;
+  }
+
+  function isPreferredCountryCandidate(place, preferredCountry) {
+    const country = normalizeScheduleText(getPlaceCountry(place) || place.country || "");
+    const display = normalizeScheduleText(place.displayName || place.display_name || "");
+    if (!preferredCountry) {
+      return false;
+    }
+    if (preferredCountry === "日本") {
+      return /日本|Japan/i.test(country) || /日本/.test(display);
+    }
+    return country.includes(preferredCountry) || display.includes(preferredCountry);
   }
 
   function getPlaceSearchProximity(event) {
@@ -2018,7 +2086,7 @@
   async function confirmPlaceCandidate(location, event) {
     let query = location;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const searchPlan = buildPlaceSearchQueries(query);
+      const searchPlan = buildPlaceSearchQueries(query, event);
       const proximity = getPlaceSearchProximity(event);
       const proximityText = proximity ? ` / 近隣ヒント: ${proximity.displayName || proximity.query || "確定済みの場所"}` : "";
       setCandidatePlaceStatus(`候補を探しています: ${searchPlan.keyword || query}${proximityText}`);
@@ -2068,23 +2136,124 @@
     };
   }
 
-  function buildPlaceSearchQueries(location) {
+  function buildPlaceSearchQueries(location, event = null) {
     const normalized = cleanLocation(normalizeScheduleText(location))
       .replace(/[、。]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
     const context = extractAddressContext(normalized);
     const keyword = extractPlaceKeyword(normalized, context);
+    const contextText = getPlaceContextText(event);
+    const contextHints = extractPlaceContextHints(`${normalized} ${contextText}`);
+    const preferredCountry = inferPreferredCountry(contextHints, `${normalized} ${contextText}`);
+    const searchContext = context || contextHints[0] || "";
+    const contextTail = [searchContext, preferredCountry].filter(Boolean).join(" ");
     const queries = uniqueStrings([
+      keyword && contextTail ? `${keyword} ${contextTail}` : "",
+      keyword && searchContext ? `${searchContext} ${keyword} ${preferredCountry}` : "",
+      normalized && contextTail ? `${normalized} ${contextTail}` : "",
       keyword && context ? `${keyword} ${context}` : "",
       keyword && context ? `${context} ${keyword}` : "",
+      ...contextHints.map((hint) => keyword ? `${keyword} ${hint} ${preferredCountry}` : ""),
       keyword,
       ...buildNameSearchVariants(keyword || normalized),
       normalized,
       context,
     ]).filter((query) => query.length >= 2);
 
-    return { original: location, normalized, context, keyword, queries };
+    return { original: location, normalized, context: searchContext || context, keyword, queries, contextHints, preferredCountry };
+  }
+
+  function getPlaceContextText(event) {
+    if (!event) {
+      return "";
+    }
+    const stops = getEventStops(event)
+      .map((stop) => [stop.time, stop.title, stop.location].filter(Boolean).join(" "))
+      .join(" ");
+    return cleanText([
+      event.title,
+      event.location,
+      event.sourceText,
+      stops,
+    ].filter(Boolean).join(" "), 900);
+  }
+
+  function extractPlaceContextHints(text) {
+    const source = normalizeScheduleText(text);
+    const hints = [];
+    const explicitAreas = source.match(/[^、。\s]{1,12}(?:都|道|府|県|市|区|町|村)/g) || [];
+    explicitAreas.forEach((area) => hints.push(area));
+    extractTripDestinationHints(source).forEach((hint) => hints.push(hint));
+
+    const prefectures = [
+      "北海道", "青森", "岩手", "宮城", "秋田", "山形", "福島", "茨城", "栃木", "群馬", "埼玉", "千葉", "東京", "神奈川",
+      "新潟", "富山", "石川", "福井", "山梨", "長野", "岐阜", "静岡", "愛知", "三重", "滋賀", "京都", "大阪", "兵庫",
+      "奈良", "和歌山", "鳥取", "島根", "岡山", "広島", "山口", "徳島", "香川", "愛媛", "高知", "福岡", "佐賀", "長崎",
+      "熊本", "大分", "宮崎", "鹿児島", "沖縄",
+    ];
+    prefectures.forEach((name) => {
+      if (source.includes(name)) {
+        hints.push(name.endsWith("都") || name.endsWith("道") || name.endsWith("府") || name.endsWith("県") ? name : `${name}県`);
+        hints.push(name);
+      }
+    });
+
+    const regionalHints = [
+      "鳥取市", "米子", "米子市", "境港", "境港市", "倉吉", "倉吉市", "大山", "鳥取砂丘", "砂丘", "砂の美術館",
+    ];
+    regionalHints.forEach((hint) => {
+      if (source.includes(hint)) {
+        hints.push(hint);
+      }
+    });
+
+    return uniqueStrings(hints).slice(0, 8);
+  }
+
+  function inferPreferredCountry(contextHints, text) {
+    const source = normalizeScheduleText(text);
+    if (/日本|Japan/i.test(source) || (contextHints || []).some(isJapaneseContextHint)) {
+      return "日本";
+    }
+    return "";
+  }
+
+  function isJapaneseContextHint(value) {
+    const hint = normalizeScheduleText(value);
+    if (!hint) {
+      return false;
+    }
+    if (/[都道府県市区町村]$/.test(hint)) {
+      return true;
+    }
+    const domesticHints = [
+      "北海道", "札幌", "函館", "青森", "仙台", "東京", "横浜", "鎌倉", "千葉", "埼玉", "日光", "草津", "箱根",
+      "新潟", "金沢", "富山", "福井", "山梨", "軽井沢", "長野", "松本", "岐阜", "高山", "静岡", "浜松",
+      "名古屋", "伊勢", "京都", "大阪", "神戸", "奈良", "和歌山", "鳥取", "米子", "境港", "倉吉", "大山",
+      "松江", "出雲", "岡山", "倉敷", "広島", "宮島", "山口", "徳島", "高松", "松山", "高知", "福岡",
+      "博多", "太宰府", "佐賀", "長崎", "熊本", "阿蘇", "大分", "別府", "宮崎", "鹿児島", "沖縄", "那覇",
+    ];
+    return domesticHints.some((name) => hint === name || hint.includes(name));
+  }
+
+  function extractTripDestinationHints(source) {
+    const hints = [];
+    const stopWords = /^(?:AI|LINE|Google|Instagram|Microsoft|X|SNS|URL|予定|旅行|観光|プラン|スケジュール|日程|午前|午後)$/i;
+    const patterns = [
+      /([一-龥ぁ-んァ-ヶーA-Za-z]{2,12})(?:旅行|旅|観光|プラン|日帰り|宿泊)/g,
+      /(?:旅行先|目的地|行き先)[:：\s]*([一-龥ぁ-んァ-ヶーA-Za-z]{2,12})/g,
+      /([一-龥ぁ-んァ-ヶーA-Za-z]{2,12})(?:へ|に)(?:行く|行き|向かう|出発|到着)/g,
+    ];
+    patterns.forEach((pattern) => {
+      [...source.matchAll(pattern)].forEach((match) => {
+        const hint = cleanText(match[1], 24);
+        if (hint && !stopWords.test(hint) && !isTravelDurationText(hint)) {
+          hints.push(hint);
+        }
+      });
+    });
+    return uniqueStrings(hints).slice(0, 6);
   }
 
   function buildNameSearchVariants(name) {
