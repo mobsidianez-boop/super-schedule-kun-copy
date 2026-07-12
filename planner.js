@@ -1350,12 +1350,13 @@
     const rest = cleanText(consumedTime ? normalized.slice(consumedTime.length) : normalized, 100)
       .replace(/^\[(車|徒歩|公共交通|バス|電車|フェリー|船|飛行機|航空|drive|car|walk|transit|bus|train|ferry|ship|boat|flight|air)\]\s*/i, "")
       .replace(/^[\s、。・:：-]+/, "");
-    if (isTravelDurationText(rest) || isDateTimeOnlyText(rest)) {
+    const isTerminalRow = /^(?:終了|解散|予定終了|日程終了)$/.test(rest);
+    if (isTravelDurationText(rest) || (isDateTimeOnlyText(rest) && !isTerminalRow)) {
       return null;
     }
     const fallbackLocation = looksLikePlaceName(rest) ? getSafeLocationFallback(rest) : "";
     const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || fallbackLocation);
-    if (isBadLocationCandidate(location)) {
+    if (location && isBadLocationCandidate(location)) {
       return null;
     }
     const note = buildReadableStopTitle(rest, location);
