@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=private-home-1">
+  <link rel="stylesheet" href="style.css?v=map-home-picker-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -237,6 +237,7 @@
             </label>
             <button class="button primary" type="button" id="home-search-button">候補を検索</button>
             <button class="button" type="button" id="home-current-button">現在地を自宅に登録</button>
+            <button class="button" type="button" id="home-map-button">地図から選ぶ</button>
             <button class="button" type="button" id="home-routes-button" hidden>自宅からルート</button>
             <button class="button" type="button" id="home-remove-button" hidden>設定を削除</button>
           </div>
@@ -436,7 +437,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=private-home-1"></script>
+  <script src="planner.js?v=map-home-picker-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

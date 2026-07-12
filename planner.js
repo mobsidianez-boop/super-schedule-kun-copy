@@ -60,6 +60,7 @@
   const homeLocationInput = document.querySelector("#home-location-input");
   const homeSearchButton = document.querySelector("#home-search-button");
   const homeCurrentButton = document.querySelector("#home-current-button");
+  const homeMapButton = document.querySelector("#home-map-button");
   const homeRoutesButton = document.querySelector("#home-routes-button");
   const homeRemoveButton = document.querySelector("#home-remove-button");
   const homeSettingsMessage = document.querySelector("#home-settings-message");
@@ -99,6 +100,7 @@
   let currentPosition = null;
   let homeLocation = null;
   let homeMarker = null;
+  let homeMapPickMode = false;
   let locationWatchId = null;
   let activeRouteEventId = "";
   let expiredNotice = "";
@@ -225,6 +227,10 @@
 
   if (homeCurrentButton) {
     homeCurrentButton.addEventListener("click", registerCurrentPositionAsHome);
+  }
+
+  if (homeMapButton) {
+    homeMapButton.addEventListener("click", toggleHomeMapPicker);
   }
 
   if (homeRemoveButton) {
@@ -3549,6 +3555,7 @@
         maxZoom: 19,
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(plannerMap);
+      plannerMap.on("click", handleHomeMapClick);
     } else if (options.recenter) {
       plannerMap.setView([current.lat, current.lon], zoom);
       window.setTimeout(() => plannerMap.invalidateSize(), 50);
@@ -5341,7 +5348,7 @@
         null,
       ));
       const candidateKeys = new Set();
-      const candidates = [...hintedCandidates, ...postalCandidates].filter((candidate) => {
+      const candidates = [...hintedCandidates.filter(isSuitableHomeCandidate), ...postalCandidates].filter((candidate) => {
         const key = `${Number(candidate.lat).toFixed(5)}:${Number(candidate.lon).toFixed(5)}:${candidate.displayName || ""}`;
         if (candidateKeys.has(key)) {
           return false;
@@ -5373,6 +5380,58 @@
     } finally {
       homeSearchButton.disabled = false;
     }
+  }
+
+  function isSuitableHomeCandidate(candidate) {
+    const category = String(candidate && candidate.category || "").toLowerCase();
+    return !/(?:shop|amenity|tourism|leisure|office|craft|commercial|supermarket|convenience|department_store|restaurant|cafe|fast_food)/.test(category);
+  }
+
+  function toggleHomeMapPicker() {
+    if (!ensurePlannerAccess() || !homeMapButton || !window.L) {
+      return;
+    }
+    homeMapPickMode = !homeMapPickMode;
+    homeMapButton.textContent = homeMapPickMode ? "地図選択をやめる" : "地図から選ぶ";
+    mapContainer.classList.toggle("home-pick-mode", homeMapPickMode);
+    if (homeMapPickMode) {
+      const center = homeLocation || currentPosition || { lat: 36.2, lon: 138.25 };
+      initMap(center, homeLocation || currentPosition ? 16 : 5, { recenter: true });
+      setHomeSettingsMessage("地図を動かして、自宅の位置をタップしてください。まだ登録はされません。", "success");
+      setRouteStatus("地図上で自宅の位置を選択中です。");
+      window.setTimeout(() => plannerMap && plannerMap.invalidateSize(), 50);
+    } else {
+      setHomeSettingsMessage("地図からの選択を終了しました。");
+    }
+  }
+
+  function handleHomeMapClick(event) {
+    if (!homeMapPickMode || !event || !event.latlng) {
+      return;
+    }
+    const lat = Number(event.latlng.lat);
+    const lon = Number(event.latlng.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return;
+    }
+    const ok = window.confirm("タップした位置を自宅として登録しますか？");
+    if (!ok) {
+      setHomeSettingsMessage("別の位置をタップしてください。地図選択は続いています。");
+      return;
+    }
+    homeMapPickMode = false;
+    homeMapButton.textContent = "地図から選ぶ";
+    mapContainer.classList.remove("home-pick-mode");
+    selectHomeLocation({
+      query: "地図から登録",
+      displayName: "地図から登録した自宅",
+      lat,
+      lon,
+      country: "",
+      category: "home",
+      source: "地図上で選択した位置",
+      fetchedAt: new Date().toISOString(),
+    });
   }
 
   async function registerCurrentPositionAsHome() {

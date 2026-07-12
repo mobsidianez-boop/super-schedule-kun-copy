@@ -1515,9 +1515,15 @@ h3 {
 
 .home-settings-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) repeat(4, auto);
+  grid-template-columns: minmax(220px, 1fr) repeat(5, auto);
   gap: 10px;
   align-items: end;
+}
+
+.planner-map.home-pick-mode {
+  cursor: crosshair;
+  outline: 4px solid rgba(42, 157, 244, 0.22);
+  outline-offset: 3px;
 }
 
 .home-settings-row label {
