@@ -1267,10 +1267,11 @@
     const rest = cleanText(timeMatch ? normalized.slice(timeMatch[0].length) : normalized, 100)
       .replace(/^\[(車|徒歩|公共交通|バス|電車|フェリー|船|飛行機|航空|drive|car|walk|transit|bus|train|ferry|ship|boat|flight|air)\]\s*/i, "")
       .replace(/^[\s、。・:：-]+/, "");
-    if (isTravelDurationText(rest)) {
+    if (isTravelDurationText(rest) || isDateTimeOnlyText(rest)) {
       return null;
     }
-    const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || rest.split(/\s+/)[0] || rest);
+    const fallbackLocation = getSafeLocationFallback(rest);
+    const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || fallbackLocation);
     if (isBadLocationCandidate(location)) {
       return null;
     }
@@ -1300,6 +1301,9 @@
       .replace(/^[\s、。・:：-]+/, "")
       .trim();
     if (!original) {
+      return "";
+    }
+    if (isDateTimeOnlyText(original)) {
       return "";
     }
     const withoutLocation = cleanText(location ? original.replace(location, "") : original, 48)
@@ -1485,6 +1489,27 @@
 
   function hasTimeSignal(text) {
     return /(?:午前|午後)?\s*([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)|(?:午前|午後)?\s*([01]?\d|2[0-3])時(?:([0-5]?\d)分?)?/.test(text);
+  }
+
+  function isDateTimeOnlyText(value) {
+    const text = cleanText(normalizeScheduleText(value), 80);
+    if (!text) {
+      return true;
+    }
+    const stripped = stripDateTime(text)
+      .replace(/(?:午前|午後|AM|PM|am|pm)/g, " ")
+      .replace(/[年月日曜火水木金土祝\/.\-:：〜～,，、。()\[\]（）\s]/g, " ")
+      .replace(/\d+/g, " ")
+      .trim();
+    if (!stripped) {
+      return true;
+    }
+    return /^(?:午前|午後|朝|昼|夕方|夜|開始|終了|集合|出発|到着|予定|時刻|日時|日付)+$/.test(stripped);
+  }
+
+  function hasDateTimeSignalOnly(value) {
+    const text = cleanText(normalizeScheduleText(value), 80);
+    return Boolean(text && (hasDateSignal(text) || hasTimeSignal(text)) && isDateTimeOnlyText(text));
   }
 
   function hasEventWord(text) {
@@ -1719,6 +1744,9 @@
   function isLikelyTitleLine(line) {
     const value = cleanText(line, 80);
     if (!value || isChatNoiseLine(value) || isTravelDurationText(value)) {
+      return false;
+    }
+    if (isDateTimeOnlyText(value) || hasDateTimeSignalOnly(value)) {
       return false;
     }
     if (hasDateSignal(value) && !hasTitleKeyword(value) && !hasEventWord(value)) {
@@ -2496,7 +2524,9 @@
     const source = normalizeScheduleText(text);
     const hints = [];
     const explicitAreas = source.match(/[^、。\s]{1,12}(?:都|道|府|県|市|区|町|村)/g) || [];
-    explicitAreas.forEach((area) => hints.push(area));
+    explicitAreas
+      .filter((area) => !isDateTimeOnlyText(area) && !hasDateTimeSignalOnly(area))
+      .forEach((area) => hints.push(area));
     extractTripDestinationHints(source).forEach((hint) => hints.push(hint));
 
     const prefectures = [
@@ -2629,7 +2659,7 @@
     patterns.forEach((pattern) => {
       [...source.matchAll(pattern)].forEach((match) => {
         const hint = cleanText(match[1], 24);
-        if (hint && !stopWords.test(hint) && !isTravelDurationText(hint)) {
+      if (hint && !stopWords.test(hint) && !isTravelDurationText(hint) && !isDateTimeOnlyText(hint) && !hasDateTimeSignalOnly(hint)) {
           hints.push(hint);
         }
       });
@@ -3925,7 +3955,7 @@
 
   function detectLocation(text) {
     const normalized = stripDateTime(text);
-    if (isTravelDurationText(normalized)) {
+    if (isTravelDurationText(normalized) || isDateTimeOnlyText(text) || isDateTimeOnlyText(normalized)) {
       return "";
     }
     const explicit = normalized.match(/(?:場所|会場|集合場所|行き先)[:：]?\s*([^\s、。]{2,32})/);
@@ -3958,7 +3988,7 @@
       .replace(/[、。]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    if (!text) {
+    if (!text || isDateTimeOnlyText(text)) {
       return "";
     }
 
@@ -3987,6 +4017,9 @@
     const eventWord = withoutDate.match(/(誕生日パーティー?|誕生日|パーティー?|会議|打ち合わせ|ミーティング|面談|面接|ランチ|飲み|食事|シフト|授業|講義|試験|テスト|提出|締切|病院|美容院|歯医者|イベント|ライブ|説明会|面会|出勤|退勤)/);
     if (location && /^(行く|いく|行き|向かう|訪問|寄る|到着|出発)?$/.test(withoutDate)) {
       return cleanText(`${location}に行く`, 48);
+    }
+    if (isDateTimeOnlyText(withoutDate) || hasDateTimeSignalOnly(withoutDate)) {
+      return "";
     }
     return cleanText(eventWord ? eventWord[1] : withoutDate, 48);
   }
@@ -4018,6 +4051,9 @@
   function normalizeDetectedTitle(title, location, sourceText = "") {
     const cleanedTitle = cleanText(title, 48);
     const cleanedLocation = cleanLocation(location);
+    if (isDateTimeOnlyText(cleanedTitle) || hasDateTimeSignalOnly(cleanedTitle)) {
+      return cleanedLocation ? cleanText(`${cleanedLocation}に行く`, 48) : "";
+    }
     if (!cleanedLocation) {
       return cleanedTitle;
     }
@@ -4061,11 +4097,24 @@
   }
 
   function cleanLocation(value) {
-    return cleanText(value, 48)
+    const cleaned = cleanText(value, 48)
       .replace(/^(場所|会場|集合場所|行き先)[:：]?/, "")
       .replace(/^(は|が|を|に)/, "")
       .replace(/(で|にて|集合|予定|予約|から|まで|到着|出発).*$/, "")
       .trim();
+    return isDateTimeOnlyText(cleaned) ? "" : cleaned;
+  }
+
+  function getSafeLocationFallback(value) {
+    const text = cleanText(normalizeScheduleText(value), 80);
+    if (!text || isDateTimeOnlyText(text)) {
+      return "";
+    }
+    const parts = text
+      .split(/\s+/)
+      .map((part) => cleanLocation(part))
+      .filter((part) => part && !isBadLocationCandidate(part));
+    return parts[0] || "";
   }
 
   function isTravelDurationText(value) {
@@ -4086,6 +4135,9 @@
       return true;
     }
     if (/^(間|あいだ|所要時間|移動時間|徒歩|車|バス|電車|公共交通|フェリー|飛行機|約|分|時間)$/.test(text)) {
+      return true;
+    }
+    if (isDateTimeOnlyText(text) || hasDateTimeSignalOnly(text)) {
       return true;
     }
     if (isTravelDurationText(text)) {
