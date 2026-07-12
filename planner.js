@@ -1361,7 +1361,7 @@
     if (location && isBadLocationCandidate(location)) {
       return null;
     }
-    const note = buildReadableStopTitle(rest, location);
+    const note = isTerminalRow ? rest : buildReadableStopTitle(rest, location);
     if (!note && !location) {
       return null;
     }
