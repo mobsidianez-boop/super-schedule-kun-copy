@@ -7,6 +7,7 @@
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
   const EMAIL_SEND_COOLDOWN_MS = 90 * 1000;
+  const MAX_EVENT_STOPS = 20;
   const EVENT_COLORS = ["#2f80c2", "#f9737f", "#22a78f", "#f59e0b", "#8b6cff", "#e0529c", "#14b8d4", "#64748b"];
   clearSavedSupabaseConfig();
   const CONFIG = { ...loadSavedSupabaseConfig(), ...(window.SUPER_SCHEDULE_CONFIG || {}) };
@@ -1276,7 +1277,7 @@
       .split(/\r?\n/)
       .map((line) => parseStopLine(line))
       .filter(Boolean)
-      .slice(0, 8);
+      .slice(0, MAX_EVENT_STOPS);
   }
 
   function extractScheduleStops(text) {
@@ -1295,7 +1296,7 @@
       seen.add(key);
       stops.push(stop);
     });
-    return stops.slice(0, 8);
+    return stops.slice(0, MAX_EVENT_STOPS);
   }
 
   function mergeDetectedStops(...groups) {
@@ -1320,7 +1321,7 @@
       seen.add(key);
       stops.push(stop);
     });
-    return stops.slice(0, 8);
+    return stops.slice(0, MAX_EVENT_STOPS);
   }
 
   function finalizeDetectedStops(stops) {
@@ -1346,7 +1347,7 @@
       }
       result.push({ ...stop });
     });
-    return result.slice(0, 8);
+    return result.slice(0, MAX_EVENT_STOPS);
   }
 
   function splitScheduleTextByTime(text) {
@@ -1429,7 +1430,7 @@
       endTime: range.end || "",
       endTimeInferred: false,
       location,
-      title: note || `${location}で予定`,
+      title: normalizeStopTitle(note || `${location}で予定`, location),
       place: null,
       placePending: Boolean(location),
       routeMode,
@@ -1438,8 +1439,36 @@
 
   function formatStopsInput(stops) {
     return getEventStops(stops)
-      .map((stop) => [stop.endTime ? `${stop.time}-${stop.endTime}` : stop.time, stop.routeMode && stop.routeMode !== "auto" ? `[${getRouteModeLabel(stop.routeMode)}]` : "", stop.location, stop.title].filter(Boolean).join(" "))
+      .map((stop) => {
+        const title = normalizeStopTitle(stop.title, stop.location);
+        const location = stop.location && !title.includes(stop.location) ? stop.location : "";
+        return [
+          stop.endTime ? `${stop.time}-${stop.endTime}` : stop.time,
+          stop.routeMode && stop.routeMode !== "auto" ? `[${getRouteModeLabel(stop.routeMode)}]` : "",
+          location,
+          title,
+        ].filter(Boolean).join(" ");
+      })
       .join("\n");
+  }
+
+  function normalizeStopTitle(value, location = "") {
+    let title = cleanText(value, 48);
+    const place = cleanText(location, 48);
+    if (place) {
+      const repeatedPlace = `${place} ${place}`;
+      while (title.startsWith(repeatedPlace)) {
+        title = cleanText(title.slice(place.length), 48);
+      }
+    }
+    const words = title.split(/\s+/).filter(Boolean);
+    if (words.length >= 2 && words.length % 2 === 0) {
+      const middle = words.length / 2;
+      if (words.slice(0, middle).join(" ") === words.slice(middle).join(" ")) {
+        title = words.slice(0, middle).join(" ");
+      }
+    }
+    return title;
   }
 
   function buildReadableStopTitle(rest, location) {
@@ -2660,7 +2689,7 @@
         time: cleanText(stop.time || "", 5),
         endTime: cleanText(stop.endTime || "", 5),
         endTimeInferred: Boolean(stop.endTimeInferred),
-        title: cleanText(stop.title || "", 48),
+        title: normalizeStopTitle(stop.title || "", stop.location || ""),
         location: cleanLocation(stop.location || ""),
         place: stop.place || null,
         placePending: Boolean(stop.placePending),
@@ -5156,7 +5185,7 @@
         location = inferredLocation;
       }
     }
-    const stopsText = window.prompt("時刻別の場所を1行ずつ入力してください。\n移動手段を後付けする場合は、行の先頭に [フェリー] や [飛行機] を付けます。\n例: 13:00 [フェリー] 高松港 出発\n例: 15:30 [飛行機] 羽田空港 到着", formatStopsInput(target));
+    const stopsText = window.prompt("時刻別の場所を1行ずつ入力してください。各行の場所名もここで変更できます。\n移動手段を後付けする場合は、行の先頭に [フェリー] や [飛行機] を付けます。\n例: 13:00 [フェリー] 港 出発\n例: 15:30 [飛行機] 空港 到着", formatStopsInput(target));
     if (stopsText === null) return;
     const stops = mergeEditedStops(target, parseStopsInput(stopsText));
     const notifyLeadMinutes = promptNumber("通知タイミング（開始何分前）", getNotifyLeadMinutes(target), 0, 240);
@@ -5192,7 +5221,7 @@
     if (stillExists) {
       scheduleEventNotification(updated);
     }
-    if (stillExists && updated.placePending) {
+    if (stillExists && (updated.placePending || updated.stopsPending)) {
       enrichEventPlaceInBackground(updated);
     }
     viewDateInput.value = updated.date;
