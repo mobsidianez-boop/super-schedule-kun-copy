@@ -59,6 +59,7 @@
   const homeSettings = document.querySelector("#home-settings");
   const homeLocationInput = document.querySelector("#home-location-input");
   const homeSearchButton = document.querySelector("#home-search-button");
+  const homeCurrentButton = document.querySelector("#home-current-button");
   const homeRoutesButton = document.querySelector("#home-routes-button");
   const homeRemoveButton = document.querySelector("#home-remove-button");
   const homeSettingsMessage = document.querySelector("#home-settings-message");
@@ -220,6 +221,10 @@
 
   if (homeSearchButton) {
     homeSearchButton.addEventListener("click", searchHomeLocationCandidates);
+  }
+
+  if (homeCurrentButton) {
+    homeCurrentButton.addEventListener("click", registerCurrentPositionAsHome);
   }
 
   if (homeRemoveButton) {
@@ -5367,6 +5372,40 @@
       setRouteStatus(`自宅を検索できませんでした: ${getErrorText(error)}`);
     } finally {
       homeSearchButton.disabled = false;
+    }
+  }
+
+  async function registerCurrentPositionAsHome() {
+    if (!ensurePlannerAccess() || !homeCurrentButton) {
+      return;
+    }
+    if (!navigator.geolocation) {
+      setHomeSettingsMessage("この端末では現在地を取得できません。住所または郵便番号から検索してください。", "error");
+      return;
+    }
+    homeCurrentButton.disabled = true;
+    setHomeSettingsMessage("現在地を取得しています。ブラウザの位置情報を許可してください。");
+    setRouteStatus("自宅として登録する現在地を取得しています。");
+    try {
+      const position = await getCurrentPosition();
+      const candidate = {
+        query: "現在地から登録",
+        displayName: "現在地から登録した自宅",
+        lat: position.lat,
+        lon: position.lon,
+        country: "",
+        category: "home",
+        source: "端末の現在地から登録",
+        fetchedAt: new Date().toISOString(),
+      };
+      currentPosition = position;
+      selectHomeLocation(candidate);
+      updateCurrentPositionMarker(position);
+    } catch (error) {
+      setHomeSettingsMessage(`現在地を登録できませんでした: ${getErrorText(error)}`, "error");
+      setRouteStatus("位置情報の許可を確認するか、住所または郵便番号から検索してください。");
+    } finally {
+      homeCurrentButton.disabled = false;
     }
   }
 

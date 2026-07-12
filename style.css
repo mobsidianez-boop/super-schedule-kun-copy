@@ -1515,7 +1515,7 @@ h3 {
 
 .home-settings-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  grid-template-columns: minmax(220px, 1fr) repeat(4, auto);
   gap: 10px;
   align-items: end;
 }
