@@ -4,8 +4,8 @@
   const SUPABASE_CONFIG_KEY = "superScheduleKunSupabaseConfig";
   const CLOUD_EVENTS_TABLE = "events";
   const DEMO_SESSION_VALUE = "demo";
-  const DAY_START = 8 * 60;
-  const DAY_END = 22 * 60;
+  const DAY_START = 0;
+  const DAY_END = 24 * 60;
   const EMAIL_SEND_COOLDOWN_MS = 90 * 1000;
   const MAX_EVENT_STOPS = 20;
   const VAULT_DB_NAME = "superScheduleKunVault";
@@ -5000,7 +5000,7 @@
     }
 
     if (!gaps.length) {
-      freeTimeList.append(createListItem("8:00-22:00の間に15分以上の空き時間はありません。"));
+      freeTimeList.append(createListItem("0:00-24:00の間に15分以上の空き時間はありません。"));
       return;
     }
 
@@ -6147,6 +6147,9 @@
   }
 
   function minutesToTime(value) {
+    if (Number(value) === 24 * 60) {
+      return "24:00";
+    }
     const minutes = Math.max(0, Math.min(23 * 60 + 59, value));
     const hour = Math.floor(minutes / 60);
     const minute = minutes % 60;
