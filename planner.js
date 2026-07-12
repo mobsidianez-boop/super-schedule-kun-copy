@@ -2375,6 +2375,28 @@
     }
   }
 
+  async function fetchJapanesePostalAddresses(postalCode) {
+    try {
+      const digits = String(postalCode || "").replace(/\D/g, "");
+      if (!/^\d{7}$/.test(digits)) {
+        return [];
+      }
+      const response = await fetchWithTimeout(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`, {}, 5500);
+      if (!response.ok) {
+        return [];
+      }
+      const data = await response.json();
+      const results = Array.isArray(data && data.results) ? data.results : [];
+      return uniqueStrings(results.map((result) => cleanText([
+        result.address1,
+        result.address2,
+        result.address3,
+      ].filter(Boolean).join(""), 80))).filter(Boolean).slice(0, 3);
+    } catch {
+      return [];
+    }
+  }
+
   async function fetchPhotonPlaces(query, limit, proximity = null, area = null) {
     try {
       const params = new URLSearchParams({
@@ -5335,10 +5357,15 @@
     try {
       const postalCode = normalizeJapanesePostalCode(query);
       const locationHints = postalCode ? removeJapanesePostalCode(query) : query;
-      const [postalPlaces, hintedCandidates] = await Promise.all([
+      const [postalPlaces, postalAddresses, hintedCandidates] = await Promise.all([
         postalCode ? fetchJapanesePostalCodePlaces(postalCode, 5) : Promise.resolve([]),
+        postalCode ? fetchJapanesePostalAddresses(postalCode) : Promise.resolve([]),
         locationHints ? fetchPlaceCandidates(locationHints, null, 5) : Promise.resolve([]),
       ]);
+      const postalAddressCandidateGroups = await Promise.all(
+        postalAddresses.map((address) => fetchPlaceCandidates(address, null, 3)),
+      );
+      const postalAddressCandidates = postalAddressCandidateGroups.flat();
       const postalCandidates = postalPlaces.map((place) => makePlaceIntel(
         query,
         postalCode,
@@ -5348,7 +5375,11 @@
         null,
       ));
       const candidateKeys = new Set();
-      const candidates = [...hintedCandidates.filter(isSuitableHomeCandidate), ...postalCandidates].filter((candidate) => {
+      const candidates = [
+        ...hintedCandidates.filter(isSuitableHomeCandidate),
+        ...postalAddressCandidates.filter(isSuitableHomeCandidate),
+        ...postalCandidates,
+      ].filter((candidate) => {
         const key = `${Number(candidate.lat).toFixed(5)}:${Number(candidate.lon).toFixed(5)}:${candidate.displayName || ""}`;
         if (candidateKeys.has(key)) {
           return false;
