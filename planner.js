@@ -20,7 +20,6 @@
   const plannerAuthPassword = document.querySelector("#planner-auth-password");
   const plannerSignupButton = document.querySelector("#planner-signup-button");
   const plannerResendButton = document.querySelector("#planner-resend-button");
-  const plannerOauthButtons = document.querySelectorAll("[data-planner-oauth]");
   const plannerAccessCode = document.querySelector("#planner-access-code");
   const plannerCodeButton = document.querySelector("#planner-code-button");
   const plannerDemoButton = document.querySelector("#planner-demo-button");
@@ -111,13 +110,6 @@
   let passwordSetupPromptOpen = false;
   const placeLookupIds = new Set();
   const placeSearchCache = new Map();
-  const enabledPlannerOAuthProviders = new Set();
-  const plannerProviderLabels = {
-    google: "Google",
-    twitter: "X",
-    azure: "Microsoft",
-    facebook: "Instagram/Meta",
-  };
 
   const today = toDateInputValue(new Date());
   dateInput.value = today;
@@ -325,10 +317,6 @@
     plannerResendButton.addEventListener("click", resendPlannerConfirmation);
   }
 
-  plannerOauthButtons.forEach((button) => {
-    button.addEventListener("click", () => loginPlannerWithOAuth(button.dataset.plannerOauth));
-  });
-
   if (plannerCodeButton) {
     plannerCodeButton.addEventListener("click", unlockWithCode);
   }
@@ -447,7 +435,6 @@
 
   async function initPlannerRuntime() {
     plannerSupabase = await getSupabaseClient();
-    await refreshPlannerOAuthProviderAvailability();
     await initPlannerAccess();
   }
 
@@ -557,42 +544,6 @@
     }
     if (data && data.session) {
       unlockPlanner("ログイン中です。予定管理を使えます。", { mode: "user", session: data.session });
-    }
-  }
-
-  async function loginPlannerWithOAuth(provider) {
-    if (!plannerSupabase) {
-      setPlannerAuthStatus("ログイン機能に接続できません。時間を置いてもう一度試してください。", "error");
-      animateGate("gate-shake");
-      return;
-    }
-    if (!plannerProviderLabels[provider]) {
-      setPlannerAuthStatus("このログイン方法には対応していません。", "error");
-      animateGate("gate-shake");
-      return;
-    }
-    if (!enabledPlannerOAuthProviders.has(provider)) {
-      setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインはSupabase側でまだ有効化されていません。メールアドレス登録かおためしを使ってください。`, "warning");
-      animateGate("gate-shake");
-      return;
-    }
-
-    setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインへ移動します。`);
-    try {
-      const { error } = await plannerSupabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: CONFIG.authRedirectUrl || window.location.href,
-          queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
-        },
-      });
-      if (error) {
-        setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
-        animateGate("gate-shake");
-      }
-    } catch (error) {
-      setPlannerAuthStatus(`${plannerProviderLabels[provider]}ログインを開始できませんでした: ${getErrorText(error)}`, "error");
-      animateGate("gate-shake");
     }
   }
 
@@ -813,75 +764,6 @@
     sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
     clearTestSession({ keepAccess: true });
     unlockPlanner("おためしモードで開いています。通知は使わず、閉じると予定は消えます。", { mode: "test" });
-  }
-
-  async function refreshPlannerOAuthProviderAvailability() {
-    const oauthPanel = plannerOauthButtons.length ? plannerOauthButtons[0].closest(".oauth-actions") : null;
-    if (oauthPanel) {
-      oauthPanel.hidden = false;
-    }
-    plannerOauthButtons.forEach((button) => {
-      button.disabled = true;
-      button.hidden = false;
-      button.dataset.providerState = "checking";
-      button.title = "ログイン方法を確認しています";
-    });
-    if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) {
-      markPlannerOAuthProvidersUnavailable();
-      return;
-    }
-    try {
-      const response = await fetch(`${CONFIG.supabaseUrl.replace(/\/+$/, "")}/auth/v1/settings`, {
-        headers: { apikey: CONFIG.supabaseAnonKey },
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const settings = await response.json();
-      const external = settings && settings.external ? settings.external : {};
-      let hasEnabledProvider = false;
-      plannerOauthButtons.forEach((button) => {
-        const provider = button.dataset.plannerOauth;
-        const isEnabled = Boolean(external[provider]);
-        hasEnabledProvider = hasEnabledProvider || isEnabled;
-        button.disabled = !isEnabled;
-        button.hidden = !isEnabled;
-        button.dataset.providerState = isEnabled ? "enabled" : "disabled";
-        button.title = isEnabled
-          ? `${plannerProviderLabels[provider]}でログイン`
-          : `${plannerProviderLabels[provider]}ログインはSupabase側で未設定です`;
-        if (isEnabled) {
-          enabledPlannerOAuthProviders.add(provider);
-        } else {
-          enabledPlannerOAuthProviders.delete(provider);
-        }
-      });
-      if (!hasEnabledProvider) {
-        if (oauthPanel) {
-          oauthPanel.hidden = true;
-        }
-        setPlannerAuthStatus("メールアドレス登録、またはおためしで予定管理へ進めます。", "muted");
-      }
-    } catch (error) {
-      markPlannerOAuthProvidersUnavailable();
-      setPlannerAuthStatus(`外部ログイン設定を確認できませんでした: ${getErrorText(error)} メールアドレス登録かおためしは使えます。`, "warning");
-    }
-  }
-
-  function markPlannerOAuthProvidersUnavailable() {
-    const oauthPanel = plannerOauthButtons.length ? plannerOauthButtons[0].closest(".oauth-actions") : null;
-    enabledPlannerOAuthProviders.clear();
-    plannerOauthButtons.forEach((button) => {
-      const provider = button.dataset.plannerOauth;
-      button.disabled = true;
-      button.hidden = true;
-      button.dataset.providerState = "disabled";
-      button.title = `${plannerProviderLabels[provider]}ログインはSupabase側で未設定です`;
-    });
-    if (oauthPanel) {
-      oauthPanel.hidden = true;
-    }
   }
 
   async function promptForPasswordSetupIfNeeded(session) {

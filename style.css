@@ -2536,78 +2536,6 @@ h3 {
   gap: 10px;
 }
 
-.oauth-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.oauth-actions .button {
-  width: 100%;
-}
-
-.oauth-actions .button:disabled {
-  cursor: not-allowed;
-  opacity: 0.56;
-  filter: grayscale(0.25);
-}
-
-.oauth-actions-branded .button {
-  justify-content: flex-start;
-  gap: 12px;
-}
-
-.oauth-logo {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.oauth-google {
-  color: #4285f4;
-  background: #ffffff;
-  border: 1px solid #e6e6e6;
-  box-shadow: inset 0 -3px 0 #34a853, inset 3px 0 0 #fbbc05, inset -3px 0 0 #ea4335;
-}
-
-.oauth-x {
-  color: #ffffff;
-  background: #101010;
-}
-
-.oauth-microsoft {
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2px;
-  padding: 3px;
-  background: #ffffff;
-  border: 1px solid #e6e6e6;
-}
-
-.oauth-microsoft i {
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
-}
-
-.oauth-microsoft i:nth-child(1) { background: #f25022; }
-.oauth-microsoft i:nth-child(2) { background: #7fba00; }
-.oauth-microsoft i:nth-child(3) { background: #00a4ef; }
-.oauth-microsoft i:nth-child(4) { background: #ffb900; }
-
-.oauth-instagram {
-  background:
-    radial-gradient(circle at 70% 28%, #ffffff 0 8%, transparent 9%),
-    radial-gradient(circle, transparent 0 34%, #ffffff 35% 46%, transparent 47%),
-    linear-gradient(135deg, #405de6, #833ab4 35%, #e1306c 62%, #fd1d1d 78%, #fcb045);
-}
-
 .login-shell {
   display: grid;
   grid-template-columns: minmax(0, 0.82fr) minmax(320px, 0.9fr);
@@ -2962,10 +2890,6 @@ footer {
   .login-shell {
     width: min(92vw, 560px);
     padding-top: 32px;
-  }
-
-  .oauth-actions {
-    grid-template-columns: 1fr;
   }
 
   .hero,
