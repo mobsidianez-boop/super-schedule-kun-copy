@@ -2,7 +2,7 @@
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
   const STORAGE_KEY = "superScheduleKunEvents";
   const SUPABASE_CONFIG_KEY = "superScheduleKunSupabaseConfig";
-  const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
+  const DEMO_SESSION_VALUE = "demo";
   const DEFAULT_CONFIG = window.SUPER_SCHEDULE_CONFIG || {};
   clearSavedSupabaseConfig();
   const CONFIG = { ...loadSavedSupabaseConfig(), ...DEFAULT_CONFIG };
@@ -198,7 +198,7 @@
   }
 
   function startDemo() {
-    sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
+    sessionStorage.setItem(ACCESS_KEY, DEMO_SESSION_VALUE);
     sessionStorage.removeItem(`${STORAGE_KEY}:test`);
     localStorage.removeItem(`${STORAGE_KEY}:test`);
     setStatus("おためし版を開きます。", "success");

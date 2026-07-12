@@ -27,45 +27,10 @@ body {
   background:
     linear-gradient(120deg, rgba(57, 189, 248, 0.13), rgba(255, 125, 172, 0.08) 44%, rgba(255, 216, 107, 0.12)),
     var(--paper);
-  background-size: 180% 180%, auto;
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
   font-size: 18px;
   line-height: 1.85;
   overflow-x: hidden;
-  animation: ambientPageWash 26s ease-in-out infinite;
-}
-
-body::before,
-body::after {
-  content: "";
-  position: fixed;
-  inset: -28%;
-  z-index: 0;
-  pointer-events: none;
-}
-
-body > * {
-  position: relative;
-  z-index: 1;
-}
-
-body::before {
-  background:
-    conic-gradient(from 18deg, transparent 0 8%, rgba(255, 255, 255, 0.68) 12%, transparent 20% 100%),
-    repeating-linear-gradient(102deg, transparent 0 42px, rgba(42, 157, 244, 0.075) 43px 44px);
-  opacity: 0.64;
-  animation: ambientSkyShift 42s linear infinite;
-  will-change: transform;
-}
-
-body::after {
-  background:
-    linear-gradient(132deg, transparent 0 32%, rgba(255, 255, 255, 0.28) 38%, transparent 45% 100%),
-    radial-gradient(circle, rgba(255, 255, 255, 0.78) 0 1px, transparent 2px) 0 0 / 54px 54px,
-    radial-gradient(circle, rgba(255, 216, 107, 0.36) 0 1px, transparent 2px) 18px 24px / 86px 86px;
-  opacity: 0.56;
-  animation: ambientSparkleDrift 31s linear infinite;
-  will-change: transform;
 }
 
 .landing-mode .planner,
@@ -1001,33 +966,6 @@ h3 {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(237, 250, 255, 0.58)),
     rgba(255, 255, 255, 0.62);
-}
-
-.planner::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(115deg, transparent 0 38%, rgba(255, 255, 255, 0.54) 48%, transparent 58% 100%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 72px);
-  transform: translateX(-70%);
-  opacity: 0.62;
-  animation: ambientPanelSweep 7.5s ease-in-out infinite;
-}
-
-.planner::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle, rgba(57, 189, 248, 0.24) 0 2px, transparent 2.5px) 0 0 / 70px 70px,
-    radial-gradient(circle, rgba(255, 125, 172, 0.2) 0 2px, transparent 2.5px) 28px 36px / 96px 96px;
-  opacity: 0.48;
-  animation: plannerBackgroundDrift 18s linear infinite;
 }
 
 .planner > * {
@@ -2210,48 +2148,9 @@ h3 {
   }
 }
 
-@keyframes ambientPageWash {
-  0%,
-  100% {
-    background-position: 0% 40%, 0 0;
-  }
-  50% {
-    background-position: 100% 60%, 0 0;
-  }
-}
-
-@keyframes ambientSkyShift {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes ambientSparkleDrift {
-  to {
-    transform: translate3d(82px, 58px, 0);
-  }
-}
-
 @keyframes ambientLineFlow {
   to {
     background-position: 220% 50%;
-  }
-}
-
-@keyframes ambientPanelSweep {
-  0%,
-  42% {
-    transform: translateX(-70%);
-  }
-  72%,
-  100% {
-    transform: translateX(70%);
-  }
-}
-
-@keyframes plannerBackgroundDrift {
-  to {
-    background-position: 140px 70px, -96px 132px;
   }
 }
 

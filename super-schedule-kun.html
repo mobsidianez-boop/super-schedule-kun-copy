@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=email-login-only-1">
+  <link rel="stylesheet" href="style.css?v=truth-security-1">
 </head>
 <body class="landing-mode">
   <header class="header">
@@ -27,7 +27,7 @@
         <span class="tag">予定管理を、もっと軽く。</span>
         <h1>予定に追われる毎日を、余白のある一日に。</h1>
         <p class="lead">
-          超スケジュールくんは、メッセージ文や手入力から予定を整理して、
+          超スケジュールくんは、貼り付けた文章、端末から選んだ画像、手入力から予定候補を整理して、
           登録、空き時間、移動メモまでまとめて扱える予定管理ツールです。
         </p>
         <div class="hero-note">
@@ -49,9 +49,9 @@
         </div>
         <div class="screen">
           <div class="mini-card phone-auth-card">
-            <span class="source">ログインして使用</span>
-            <strong>アカウントで続ける / おためし</strong>
-            <span class="register">入室</span>
+            <span class="source">本日の予定</span>
+            <strong>登録済み 1件</strong>
+            <span class="register">編集</span>
           </div>
           <div class="phone-form-card">
             <span>予定名</span>
@@ -78,167 +78,10 @@
         </div>
       </div>    </section>
 
-    <section class="section planner" id="planner" aria-labelledby="planner-title">
-      <div class="section-head">
-        <p class="eyebrow">WORKSPACE</p>
-        <h2 id="planner-title">予定ワークスペース</h2>
-        <p class="board-intro">予定を登録し、メッセージ文や画像から候補を検出して、一日の空き時間と移動メモを確認できます。</p>
-      </div>
-
-      <div class="auth-panel planner-gate" id="planner-gate">
-        <div class="planner-panel-head">
-          <h3>予定管理を使う</h3>
-          <span class="planner-hint">初回は新規登録してください</span>
-        </div>
-        <form class="auth-form" id="planner-auth-form">
-          <label>
-            <span>メールアドレス</span>
-            <input id="planner-auth-email" type="email" autocomplete="email" placeholder="you@example.com">
-          </label>
-          <label>
-            <span>パスワード</span>
-            <input id="planner-auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上">
-          </label>
-          <div class="auth-actions">
-            <button class="button primary" type="submit">ログイン</button>
-            <button class="button" type="button" id="planner-signup-button">新規登録</button>
-            <button class="button" type="button" id="planner-resend-button">確認メールを再送</button>
-          </div>
-        </form>
-        <div class="planner-code-row">
-          <button class="button primary" type="button" id="planner-demo-button">おためしで使う</button>
-        </div>
-        <p class="auth-status" id="planner-auth-status">予定管理はログイン後に使えます。</p>
-      </div>
-
-      <div id="planner-app" hidden>
-      <div class="planner-app-topbar">
-        <button class="button planner-logout-button" type="button" id="planner-logout-button" hidden>ログアウト</button>
-      </div>
-      <div class="planner-layout">
-        <div class="planner-panel">
-          <div class="planner-panel-head">
-            <h3>予定を登録</h3>
-            <button class="icon-button" type="button" id="clear-events-button" title="すべて削除">消去</button>
-          </div>
-          <form class="planner-form" id="event-form">
-            <label>
-              <span>予定名</span>
-              <input id="event-title" type="text" maxlength="48" placeholder="例: 渋谷で打ち合わせ" required>
-            </label>
-            <div class="planner-form-grid">
-              <label>
-                <span>日付</span>
-                <input id="event-date" type="date" required>
-              </label>
-              <label>
-                <span>開始</span>
-                <input id="event-start" type="time" required>
-              </label>
-              <label>
-                <span>終了</span>
-                <input id="event-end" type="time" required>
-              </label>
-            </div>
-            <div class="planner-form-grid two">
-              <label>
-                <span>場所</span>
-                <input id="event-location" type="text" maxlength="40" placeholder="例: 渋谷">
-              </label>
-              <label>
-                <span>通知タイミング</span>
-                <input id="event-travel" type="number" min="0" max="240" step="5" placeholder="開始の何分前">
-              </label>
-            </div>
-            <label>
-              <span>時刻別の場所</span>
-              <textarea id="event-stops" rows="3" maxlength="360" placeholder="例: 13:00 渋谷駅 集合&#10;15:30 カフェ 休憩"></textarea>
-            </label>
-            <button class="button primary" type="submit">予定に追加</button>
-          </form>
-        </div>
-
-        <div class="planner-panel">
-          <div class="planner-panel-head">
-            <h3>文章・画像から候補を検出</h3>
-            <span class="planner-hint">例: 明日18:30 渋谷で打ち合わせ</span>
-          </div>
-          <form class="detect-form" id="detect-form">
-            <label class="image-picker">
-              <span>このデバイスの画像から読み取る</span>
-              <input id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-            </label>
-            <div class="ocr-preview" id="ocr-preview" hidden>
-              <img id="ocr-preview-image" alt="選択した画像のプレビュー">
-              <div>
-                <strong id="ocr-status">画像を読み取っています。</strong>
-                <progress id="ocr-progress" value="0" max="1"></progress>
-              </div>
-            </div>
-            <label>
-              <span>メッセージ本文</span>
-              <textarea id="detect-text" rows="5" maxlength="280" placeholder="予定が書かれた文章を貼り付けてください"></textarea>
-            </label>
-            <button class="button" type="submit">候補を作る</button>
-          </form>
-          <div class="candidate-box" id="candidate-box" hidden>
-            <p class="eyebrow">候補</p>
-            <strong id="candidate-title"></strong>
-            <span id="candidate-meta"></span>
-            <div class="place-intel" id="candidate-place" hidden></div>
-            <button class="button primary" type="button" id="candidate-add-button">この候補を登録</button>
-          </div>
-          <p class="planner-note">画像内の文字は、使用中のデバイスから選んだ画像だけをブラウザ内OCRで読み取ります。場所が見つかった場合は確認後に大まかな座標を調べ、予定が近づいたらブラウザ通知します。リアルタイム混雑は交通API接続時だけ表示します。</p>
-        </div>
-      </div>
-
-      <div class="planner-board">
-        <div class="planner-toolbar">
-          <label>
-            <span>表示日</span>
-            <input id="view-date" type="date">
-          </label>
-          <button class="button" type="button" id="locate-routes-button">現在地から移動時間を調べる</button>
-          <div class="planner-summary" id="planner-summary">予定を読み込んでいます。</div>
-        </div>
-        <div class="route-status" id="route-status">現在地と予定場所を地図で確認できます。</div>
-        <div class="planner-map" id="planner-map" aria-label="現在地と予定場所の地図"></div>
-        <div class="map-legend" aria-label="地図のピン説明">
-          <span><i class="legend-current"></i>現在地</span>
-          <span><i class="legend-event"></i>予定場所</span>
-          <span><i class="legend-route"></i>移動ルート</span>
-          <span><i class="legend-traffic"></i>渋滞区間</span>
-          <span><i class="legend-walk"></i>徒歩</span>
-          <span><i class="legend-transit"></i>公共交通</span>
-          <span><i class="legend-ferry"></i>フェリー</span>
-          <span><i class="legend-flight"></i>飛行機</span>
-        </div>
-        <ul class="route-list" id="route-list"></ul>
-        <section class="schedule-board" aria-label="表示日のスケジュール表">
-          <div class="schedule-board-head">
-            <h3>スケジュール表</h3>
-            <span id="schedule-table-status">表示日の時間割を表示します。</span>
-          </div>
-          <div class="schedule-table" id="schedule-table"></div>
-          <div class="schedule-floating" id="schedule-floating"></div>
-        </section>
-        <section class="all-events-board" aria-label="登録されているすべての予定">
-          <h3>登録済みの予定</h3>
-          <ul id="all-events-list"></ul>
-        </section>
-        <div class="timeline-board" id="timeline-board" aria-live="polite"></div>
-        <div class="free-time-board">
-          <h3>空き時間</h3>
-          <ul id="free-time-list"></ul>
-        </div>
-      </div>
-      </div>
-    </section>
-
     <section class="intro-strip" aria-label="サービスの特徴">
       <div>
         <strong>予定候補を拾う</strong>
-        <span>見落としやすい連絡から、登録できそうな予定を整理します。</span>
+        <span>貼り付けた文章や選んだ画像から、登録できそうな予定候補を整理します。</span>
       </div>
       <div>
         <strong>余白を見つける</strong>
@@ -297,7 +140,7 @@
         <article class="step">
           <span class="num">1</span>
           <h3>予定を検出</h3>
-          <p>文章や画像内の文字から日時、場所、内容の候補を作ります。</p>
+          <p>貼り付けた文章や端末から選んだ画像内の文字から、日時、場所、内容の候補を作ります。</p>
         </article>
         <article class="step">
           <span class="num">2</span>
@@ -306,8 +149,8 @@
         </article>
         <article class="step">
           <span class="num">3</span>
-          <h3>ワンタップ登録</h3>
-          <p>ユーザーは確認して登録するだけで完了します。</p>
+          <h3>確認して登録</h3>
+          <p>検出結果を確認し、必要なら編集してからアプリ内の予定表へ登録します。</p>
         </article>
         <article class="step">
           <span class="num">4</span>
@@ -322,360 +165,10 @@
       <p>このトップページでは全体像を紹介しています。具体的な機能は次のページにまとめました。</p>
       <a class="button primary" href="features.html">機能ページへ</a>
     </section>
-
-    <section class="section bulletin" aria-labelledby="bulletin-title">
-      <div class="section-head">
-        <p class="eyebrow">BOARD</p>
-        <h2 id="bulletin-title">ひとこと掲示板</h2>
-        <p class="board-intro">名前とメッセージを送ると、みんなの投稿がこのページの下に新しい順で表示されます。ログインすると投稿にユーザーIDも保存できます。</p>
-      </div>
-
-      <div class="auth-panel">
-        <form class="auth-form" id="auth-form">
-          <label>
-            <span>メールアドレス</span>
-            <input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
-          </label>
-          <label>
-            <span>パスワード</span>
-            <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="6" placeholder="6文字以上" required>
-          </label>
-          <div class="auth-actions">
-            <button class="button primary" type="submit" data-auth-action="login">ログイン</button>
-            <button class="button" type="button" id="signup-button">新規登録</button>
-            <button class="button" type="button" id="resend-button">確認メールを再送</button>
-          </div>
-        </form>
-        <div class="auth-session" id="auth-session" hidden>
-          <div>
-            <span>ログイン中</span>
-            <strong id="auth-email-display"></strong>
-          </div>
-          <button class="button" type="button" id="logout-button">ログアウト</button>
-        </div>
-        <p class="auth-status" id="auth-status">ログインなしでも投稿できます。ログインすると投稿にユーザーIDが付きます。</p>
-      </div>
-
-      <form class="bulletin-form" id="bulletin-form">
-        <label>
-          <span>名前</span>
-          <input id="bulletin-name" name="name" type="text" maxlength="24" placeholder="例: 田中" required>
-        </label>
-        <label>
-          <span>メッセージ</span>
-          <textarea id="bulletin-message" name="message" maxlength="160" rows="4" placeholder="ひとことどうぞ" required></textarea>
-        </label>
-        <button class="button primary" type="submit">送信する</button>
-      </form>
-
-      <div class="bulletin-list-wrap">
-        <div class="bulletin-list-head">
-          <h3>投稿一覧</h3>
-          <span id="bulletin-count">0件</span>
-        </div>
-        <p class="bulletin-status" id="bulletin-status">読み込み中です。</p>
-        <ul class="bulletin-list" id="bulletin-list" aria-live="polite"></ul>
-      </div>
-    </section>
   </main>
 
   <footer>
     超スケジュールくん | 予定管理を、もっと軽く。
   </footer>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="this.onerror=null;this.src='https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js';"></script>
-  <script>
-    window.SUPER_SCHEDULE_CONFIG = {
-      supabaseUrl: "https://ealykpoepyqpuxtfqabf.supabase.co",
-      supabaseAnonKey: "sb_publishable_lo7QUF2qKnhf7GLBjyz1lw_eu0fhF5l",
-      authRedirectUrl: "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html",
-      tomtomTrafficApiKey: ""
-    };
-  </script>
-  <script src="planner.js?v=email-login-only-1"></script>
-  <script type="module">
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-    const SUPABASE_URL = "https://ealykpoepyqpuxtfqabf.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_lo7QUF2qKnhf7GLBjyz1lw_eu0fhF5l";
-    const AUTH_REDIRECT_URL = "https://mobsidianez-boop.github.io/super-schedule-kun-copy/app.html";
-
-    (() => {
-      const MAX_NAME_LENGTH = 24;
-      const MAX_BODY_LENGTH = 160;
-      let currentSession = null;
-      const form = document.querySelector("#bulletin-form");
-      const nameInput = document.querySelector("#bulletin-name");
-      const messageInput = document.querySelector("#bulletin-message");
-      const submitButton = form.querySelector("button");
-      const authForm = document.querySelector("#auth-form");
-      const authEmailInput = document.querySelector("#auth-email");
-      const authPasswordInput = document.querySelector("#auth-password");
-      const signupButton = document.querySelector("#signup-button");
-      const resendButton = document.querySelector("#resend-button");
-      const logoutButton = document.querySelector("#logout-button");
-      const authSession = document.querySelector("#auth-session");
-      const authEmailDisplay = document.querySelector("#auth-email-display");
-      const authStatus = document.querySelector("#auth-status");
-      const list = document.querySelector("#bulletin-list");
-      const count = document.querySelector("#bulletin-count");
-      const status = document.querySelector("#bulletin-status");
-      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-      const setAuthStatus = (message, tone = "muted") => {
-        authStatus.textContent = message;
-        authStatus.dataset.tone = tone;
-      };
-
-      const setStatus = (message, tone = "muted") => {
-        status.textContent = message;
-        status.dataset.tone = tone;
-      };
-
-      const updateAuthView = (session) => {
-        currentSession = session;
-        const isLoggedIn = Boolean(session);
-        authForm.hidden = isLoggedIn;
-        authSession.hidden = !isLoggedIn;
-        if (isLoggedIn) {
-          authEmailDisplay.textContent = session.user.email || "ログイン済みユーザー";
-          setAuthStatus("ログイン中です。投稿できます。", "success");
-        } else {
-          authEmailDisplay.textContent = "";
-          setAuthStatus("ログインなしでも投稿できます。ログインすると投稿にユーザーIDが付きます。", "warning");
-        }
-      };
-
-      const formatDate = (dateText) => {
-        const date = new Date(dateText);
-        return new Intl.DateTimeFormat("ja-JP", {
-          month: "numeric",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit"
-        }).format(date);
-      };
-
-      const renderPosts = (posts) => {
-        list.replaceChildren();
-        count.textContent = `${posts.length}件`;
-
-        if (posts.length === 0) {
-          const empty = document.createElement("li");
-          empty.className = "bulletin-empty";
-          empty.textContent = "まだ投稿はありません。最初のひとことをどうぞ。";
-          list.append(empty);
-          return;
-        }
-
-        posts.forEach((post) => {
-          const item = document.createElement("li");
-          item.className = "bulletin-post";
-
-          const meta = document.createElement("div");
-          meta.className = "bulletin-meta";
-
-          const name = document.createElement("strong");
-          name.textContent = post.name || "匿名";
-
-          const time = document.createElement("time");
-          time.dateTime = post.created_at;
-          time.textContent = formatDate(post.created_at);
-
-          const message = document.createElement("p");
-          message.textContent = post.body || post.content || "";
-
-          meta.append(name, time);
-          item.append(meta, message);
-          list.append(item);
-        });
-      };
-
-      const getErrorMessage = (error) => {
-        if (!error) {
-          return "原因不明のエラーです。";
-        }
-
-        const message = error.message || error.details || String(error);
-        if (/failed to fetch|fetch failed|network|load failed/i.test(message)) {
-          return "Supabaseに接続できませんでした。プロジェクトURL、公開キー、プロジェクトの停止状態、ネットワーク制限を確認してください。";
-        }
-        return message;
-      };
-
-      const isEmailVerified = (user) => Boolean(user && (user.email_confirmed_at || user.confirmed_at));
-
-      const loadPosts = async () => {
-        setStatus("投稿を読み込んでいます。");
-        const { data, error } = await supabase
-          .from("messages")
-          .select("id, name, body, content, created_at")
-          .order("created_at", { ascending: false })
-          .limit(100);
-
-        if (error) {
-          setStatus(`投稿を読み込めませんでした: ${getErrorMessage(error)}`, "error");
-          renderPosts([]);
-          return;
-        }
-
-        setStatus("最新の投稿を表示しています。", "success");
-        renderPosts(data || []);
-      };
-
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const name = nameInput.value.trim();
-        const body = messageInput.value.trim();
-
-        if (!name || !body) {
-          setStatus("名前とメッセージを入力してください。", "warning");
-          return;
-        }
-
-        if (name.length > MAX_NAME_LENGTH || body.length > MAX_BODY_LENGTH) {
-          setStatus(`名前は${MAX_NAME_LENGTH}文字以内、メッセージは${MAX_BODY_LENGTH}文字以内で入力してください。`, "warning");
-          return;
-        }
-
-        submitButton.disabled = true;
-        setStatus("送信しています。");
-
-        try {
-          const messageRow = {
-            name,
-            body,
-            content: body
-          };
-
-          if (currentSession) {
-            messageRow.user_id = currentSession.user.id;
-          }
-
-          const { error } = await supabase
-            .from("messages")
-            .insert(messageRow);
-
-          if (error) {
-            setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
-            return;
-          }
-
-          setStatus("投稿しました。", "success");
-          form.reset();
-          await loadPosts();
-        } catch (error) {
-          setStatus(`送信できませんでした: ${getErrorMessage(error)}`, "error");
-        } finally {
-          submitButton.disabled = false;
-        }
-      });
-
-      authForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const email = authEmailInput.value.trim();
-        const password = authPasswordInput.value;
-
-        setAuthStatus("ログインしています。");
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-        if (error) {
-          setAuthStatus(`ログインできませんでした: ${getErrorMessage(error)}`, "error");
-          return;
-        }
-
-        if (!isEmailVerified(data && data.session && data.session.user)) {
-          await supabase.auth.signOut();
-          setAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "error");
-          return;
-        }
-
-        updateAuthView(data.session);
-      });
-
-      signupButton.addEventListener("click", async () => {
-        const email = authEmailInput.value.trim();
-        const password = authPasswordInput.value;
-
-        if (!email || !password) {
-          setAuthStatus("メールアドレスとパスワードを入力してください。", "warning");
-          return;
-        }
-
-        setAuthStatus("登録しています。");
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: AUTH_REDIRECT_URL
-          }
-        });
-
-        if (error) {
-          setAuthStatus(`登録できませんでした: ${getErrorMessage(error)}`, "error");
-          return;
-        }
-
-        if (data.session) {
-          await supabase.auth.signOut();
-        }
-
-        setAuthStatus("確認メールを送信しました。メール内のリンクを開いてからログインしてください。届かない場合は再送してください。", "success");
-      });
-
-      resendButton.addEventListener("click", async () => {
-        const email = authEmailInput.value.trim();
-
-        if (!email) {
-          setAuthStatus("確認メールを再送するメールアドレスを入力してください。", "warning");
-          return;
-        }
-
-        setAuthStatus("確認メールを再送しています。");
-        const { error } = await supabase.auth.resend({
-          type: "signup",
-          email,
-          options: {
-            emailRedirectTo: AUTH_REDIRECT_URL
-          }
-        });
-
-        if (error) {
-          setAuthStatus(`確認メールを再送できませんでした: ${getErrorMessage(error)}`, "error");
-          return;
-        }
-
-        setAuthStatus("確認メールを再送しました。届かない場合はSupabaseのメール送信設定と迷惑メールフォルダを確認してください。", "success");
-      });
-
-      logoutButton.addEventListener("click", async () => {
-        await supabase.auth.signOut();
-        updateAuthView(null);
-      });
-
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session && !isEmailVerified(session.user)) {
-          await supabase.auth.signOut();
-          updateAuthView(null);
-          setAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
-          return;
-        }
-        updateAuthView(session);
-      });
-
-      supabase.auth.getSession().then(async ({ data }) => {
-        if (data.session && !isEmailVerified(data.session.user)) {
-          await supabase.auth.signOut();
-          updateAuthView(null);
-          setAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
-          return;
-        }
-        updateAuthView(data.session);
-      });
-
-      loadPosts();
-    })();
-  </script>
 </body>
 </html>

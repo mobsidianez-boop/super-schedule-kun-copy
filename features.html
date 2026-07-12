@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>機能 | 超スケジュールくん</title>
-  <link rel="stylesheet" href="style.css?v=ocr-route-home-1">
+  <link rel="stylesheet" href="style.css?v=truth-security-1">
 </head>
 <body>
   <header class="header">
     <a class="logo" href="super-schedule-kun.html" aria-label="超スケジュールくん ホーム">
-      <span class="logo-mark">S</span>
+      <span class="logo-mark">超</span>
       <span>超スケジュールくん</span>
     </a>
     <nav class="nav" aria-label="ページナビゲーション">
@@ -23,7 +23,7 @@
     <section class="page-title">
       <p class="eyebrow">FEATURES</p>
       <h1>毎日の予定管理に必要なことを、ひとつに。</h1>
-      <p class="lead">予定の発見、登録、空き時間の把握、移動の見通しまで、日々の小さな手間をまとめて減らします。</p>
+      <p class="lead">貼り付けた文章や選んだ画像からの候補作成、登録、空き時間の把握、移動の見通しを一つの画面で扱います。</p>
     </section>
 
     <section class="section">
@@ -42,8 +42,8 @@
         <article class="feature-row">
           <span class="feature-icon">02</span>
           <div>
-            <h2>ワンタップでカレンダーに登録</h2>
-            <p>候補を見て、必要ならタイトルや場所を直して登録。手入力の負担を減らしつつ、最後の判断はユーザーが持てるようにします。</p>
+            <h2>確認してアプリ内予定表へ登録</h2>
+            <p>候補を見て、必要ならタイトルや場所を直して登録します。Googleカレンダーなど外部カレンダーへの自動登録ではありません。</p>
           </div>
         </article>
         <article class="feature-row">
@@ -56,8 +56,8 @@
         <article class="feature-row">
           <span class="feature-icon">04</span>
           <div>
-            <h2>移動時間メモをまとめて管理</h2>
-            <p>場所が変わる予定では、手入力した移動時間を予定の一部として扱います。予定開始時刻だけでなく、動き出す時刻を意識できます。</p>
+            <h2>地図と移動時間を確認</h2>
+            <p>現在地または自宅と予定場所を地図に表示し、取得できた道路ルートと移動時間を確認できます。交通API未設定時はリアルタイム渋滞を表示しません。</p>
           </div>
         </article>
       </div>
@@ -72,7 +72,7 @@
         <div class="board-panel large">
           <span class="board-label">予定候補</span>
           <h3>「これ、予定かも」を先にまとめる</h3>
-          <p>チャットやメモの中から予定らしい情報を見つけたら、候補として一箇所に集めます。</p>
+          <p>ユーザーが貼り付けた文章や端末から選んだ画像を解析し、予定らしい情報を候補にします。チャットを自動巡回する機能ではありません。</p>
         </div>
         <div class="board-panel">
           <span class="board-label">確認</span>
@@ -108,9 +108,20 @@
       </div>
     </section>
 
+    <section class="section split" aria-labelledby="data-policy-title">
+      <div>
+        <p class="eyebrow">DATA &amp; PRIVACY</p>
+        <h2 id="data-policy-title">データの扱い。</h2>
+      </div>
+      <div class="statement">
+        <p>選択した画像本体はブラウザ内OCRで処理します。一方、場所検索・経路・天気の取得時には、場所名、郵便番号、現在地や目的地の座標をHTTPSで外部の地図・経路・天気サービスへ送ります。</p>
+        <p>ログイン利用時の予定はユーザーIDごとにクラウド同期し、端末内キャッシュと自宅情報はAES-GCMで暗号化します。おためしデータはセッション終了時に消えます。</p>
+      </div>
+    </section>
+
     <section class="section cta">
-      <h2>使うほど、予定の見落としが減っていく。</h2>
-      <p>次は、どんな人に向いているかを見てみましょう。</p>
+      <h2>できることと制限を確認して使う。</h2>
+      <p>OCRは画像によって誤読するため登録前の確認が必要です。ブラウザ通知は通知許可があり、ページが動作している間に限られます。</p>
       <a class="button primary" href="use-cases.html">活用シーンへ</a>
     </section>
   </main>

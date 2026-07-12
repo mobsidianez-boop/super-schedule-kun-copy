@@ -3,11 +3,14 @@
   const ACCESS_KEY = "superScheduleKunPlannerAccess";
   const SUPABASE_CONFIG_KEY = "superScheduleKunSupabaseConfig";
   const CLOUD_EVENTS_TABLE = "events";
-  const ACCESS_CODE = String.fromCharCode(77, 75, 84, 44, 69, 90);
+  const DEMO_SESSION_VALUE = "demo";
   const DAY_START = 8 * 60;
   const DAY_END = 22 * 60;
   const EMAIL_SEND_COOLDOWN_MS = 90 * 1000;
   const MAX_EVENT_STOPS = 20;
+  const VAULT_DB_NAME = "superScheduleKunVault";
+  const VAULT_STORE_NAME = "keys";
+  const VAULT_KEY_ID = "local-aes-gcm-v1";
   const EVENT_COLORS = ["#2f80c2", "#f9737f", "#22a78f", "#f59e0b", "#8b6cff", "#e0529c", "#14b8d4", "#64748b"];
   clearSavedSupabaseConfig();
   const CONFIG = { ...loadSavedSupabaseConfig(), ...(window.SUPER_SCHEDULE_CONFIG || {}) };
@@ -20,8 +23,6 @@
   const plannerAuthPassword = document.querySelector("#planner-auth-password");
   const plannerSignupButton = document.querySelector("#planner-signup-button");
   const plannerResendButton = document.querySelector("#planner-resend-button");
-  const plannerAccessCode = document.querySelector("#planner-access-code");
-  const plannerCodeButton = document.querySelector("#planner-code-button");
   const plannerDemoButton = document.querySelector("#planner-demo-button");
   const plannerSupabaseUrlInput = document.querySelector("#planner-supabase-url");
   const plannerSupabaseKeyInput = document.querySelector("#planner-supabase-key");
@@ -88,6 +89,8 @@
   let plannerCloudWarningShown = false;
   let cloudSyncTimer = null;
   let cloudSyncInFlight = false;
+  let protectedStorageQueue = Promise.resolve();
+  let vaultKeyPromise = null;
   let candidateAddInFlight = false;
   let lastDetectMessage = "";
   let lastOcrText = "";
@@ -317,10 +320,6 @@
     plannerResendButton.addEventListener("click", resendPlannerConfirmation);
   }
 
-  if (plannerCodeButton) {
-    plannerCodeButton.addEventListener("click", unlockWithCode);
-  }
-
   if (plannerDemoButton) {
     plannerDemoButton.addEventListener("click", unlockDemoMode);
   }
@@ -459,8 +458,8 @@
     lockPlanner();
 
     if (!plannerSupabase) {
-      if (sessionStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
-        unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
+      if (sessionStorage.getItem(ACCESS_KEY) === DEMO_SESSION_VALUE) {
+        unlockPlanner("おためしモードで開いています。", { mode: "test" });
         return;
       }
       setPlannerAuthStatus("ログイン機能を読み込めませんでした。コードなしのおためしでも開けます。", "warning");
@@ -476,7 +475,7 @@
           lockPlanner();
           setPlannerAuthStatus("メール確認が終わっていません。届いた確認メールのリンクを開いてからログインしてください。", "warning");
         }
-      } else if (sessionStorage.getItem(ACCESS_KEY) !== ACCESS_CODE) {
+      } else if (sessionStorage.getItem(ACCESS_KEY) !== DEMO_SESSION_VALUE) {
         lockPlanner();
       }
     });
@@ -498,8 +497,8 @@
       return;
     }
 
-    if (sessionStorage.getItem(ACCESS_KEY) === ACCESS_CODE) {
-      unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
+    if (sessionStorage.getItem(ACCESS_KEY) === DEMO_SESSION_VALUE) {
+      unlockPlanner("おためしモードで開いています。", { mode: "test" });
     }
   }
 
@@ -750,18 +749,8 @@
     }, EMAIL_SEND_COOLDOWN_MS);
   }
 
-  function unlockWithCode() {
-    if (plannerAccessCode.value.trim() !== ACCESS_CODE) {
-      setPlannerAuthStatus("テストコードが違います。", "error");
-      animateGate("gate-shake");
-      return;
-    }
-    sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
-    unlockPlanner("開発者テストモードで開いています。", { mode: "test" });
-  }
-
   function unlockDemoMode() {
-    sessionStorage.setItem(ACCESS_KEY, ACCESS_CODE);
+    sessionStorage.setItem(ACCESS_KEY, DEMO_SESSION_VALUE);
     clearTestSession({ keepAccess: true });
     unlockPlanner("おためしモードで開いています。通知は使わず、閉じると予定は消えます。", { mode: "test" });
   }
@@ -858,9 +847,9 @@
     if (plannerStorageMode === "user") {
       await loadUserEvents(options.session);
     } else {
-      events = loadEvents(getLocalEventsKey());
+      events = await loadEvents(getLocalEventsKey());
     }
-    homeLocation = loadHomeLocation();
+    homeLocation = await loadHomeLocation();
     renderHomeStatus();
     if (plannerGate) {
       animateElement(plannerGate, "gate-unlock", 520);
@@ -5212,10 +5201,167 @@
     return `${getLocalEventsKey()}:home`;
   }
 
-  function loadHomeLocation() {
+  function queueProtectedWrite(storageKey, value) {
+    if (plannerStorageMode === "test") {
+      if (value === null || value === undefined) {
+        sessionStorage.removeItem(storageKey);
+      } else {
+        sessionStorage.setItem(storageKey, JSON.stringify(value));
+      }
+      return;
+    }
+    const snapshot = value === null || value === undefined
+      ? null
+      : JSON.parse(JSON.stringify(value));
+    protectedStorageQueue = protectedStorageQueue
+      .catch(() => undefined)
+      .then(() => writeProtectedValue(storageKey, snapshot))
+      .catch(() => {
+        localStorage.removeItem(storageKey);
+        const sessionFallbackKey = `${storageKey}:private-session`;
+        if (snapshot === null) {
+          sessionStorage.removeItem(sessionFallbackKey);
+        } else {
+          sessionStorage.setItem(sessionFallbackKey, JSON.stringify(snapshot));
+        }
+      });
+  }
+
+  async function readProtectedValue(storageKey, fallback) {
+    if (plannerStorageMode === "test") {
+      try {
+        return JSON.parse(sessionStorage.getItem(storageKey) || JSON.stringify(fallback));
+      } catch {
+        return fallback;
+      }
+    }
+    const sessionFallbackKey = `${storageKey}:private-session`;
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      try {
+        return JSON.parse(sessionStorage.getItem(sessionFallbackKey) || JSON.stringify(fallback));
+      } catch {
+        return fallback;
+      }
+    }
     try {
-      const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
-      const value = JSON.parse(storage.getItem(getHomeStorageKey()) || "null");
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.version === 1 && parsed.iv && parsed.ciphertext) {
+        return await decryptProtectedValue(parsed, storageKey);
+      }
+      queueProtectedWrite(storageKey, parsed);
+      return parsed;
+    } catch {
+      localStorage.removeItem(storageKey);
+      return fallback;
+    }
+  }
+
+  async function writeProtectedValue(storageKey, value) {
+    const sessionFallbackKey = `${storageKey}:private-session`;
+    if (value === null || value === undefined) {
+      localStorage.removeItem(storageKey);
+      sessionStorage.removeItem(sessionFallbackKey);
+      return;
+    }
+    if (!window.crypto || !window.crypto.subtle || !window.indexedDB) {
+      localStorage.removeItem(storageKey);
+      sessionStorage.setItem(sessionFallbackKey, JSON.stringify(value));
+      return;
+    }
+    const key = await getVaultKey();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(value));
+    const additionalData = new TextEncoder().encode(storageKey);
+    const ciphertext = await window.crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, additionalData },
+      key,
+      plaintext,
+    );
+    localStorage.setItem(storageKey, JSON.stringify({
+      version: 1,
+      algorithm: "AES-GCM",
+      iv: bytesToBase64(iv),
+      ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    }));
+    sessionStorage.removeItem(sessionFallbackKey);
+  }
+
+  async function decryptProtectedValue(record, storageKey) {
+    const key = await getVaultKey();
+    const iv = base64ToBytes(record.iv);
+    const ciphertext = base64ToBytes(record.ciphertext);
+    const additionalData = new TextEncoder().encode(storageKey);
+    const plaintext = await window.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv, additionalData },
+      key,
+      ciphertext,
+    );
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  }
+
+  function getVaultKey() {
+    if (vaultKeyPromise) {
+      return vaultKeyPromise;
+    }
+    vaultKeyPromise = new Promise((resolve, reject) => {
+      const request = window.indexedDB.open(VAULT_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(VAULT_STORE_NAME)) {
+          database.createObjectStore(VAULT_STORE_NAME);
+        }
+      };
+      request.onerror = () => reject(request.error || new Error("暗号鍵の保存領域を開けませんでした。"));
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(VAULT_STORE_NAME, "readwrite");
+        const store = transaction.objectStore(VAULT_STORE_NAME);
+        const getRequest = store.get(VAULT_KEY_ID);
+        getRequest.onerror = () => reject(getRequest.error || new Error("暗号鍵を読み込めませんでした。"));
+        getRequest.onsuccess = async () => {
+          if (getRequest.result) {
+            resolve(getRequest.result);
+            return;
+          }
+          try {
+            const key = await window.crypto.subtle.generateKey(
+              { name: "AES-GCM", length: 256 },
+              false,
+              ["encrypt", "decrypt"],
+            );
+            const saveTransaction = database.transaction(VAULT_STORE_NAME, "readwrite");
+            const putRequest = saveTransaction.objectStore(VAULT_STORE_NAME).put(key, VAULT_KEY_ID);
+            putRequest.onerror = () => reject(putRequest.error || new Error("暗号鍵を保存できませんでした。"));
+            putRequest.onsuccess = () => resolve(key);
+          } catch (error) {
+            reject(error);
+          }
+        };
+      };
+    }).catch((error) => {
+      vaultKeyPromise = null;
+      throw error;
+    });
+    return vaultKeyPromise;
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    return window.btoa(binary);
+  }
+
+  function base64ToBytes(value) {
+    const binary = window.atob(String(value || ""));
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  }
+
+  async function loadHomeLocation() {
+    try {
+      const value = await readProtectedValue(getHomeStorageKey(), null);
       return value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lon))
         ? { ...value, lat: Number(value.lat), lon: Number(value.lon) }
         : null;
@@ -5225,12 +5371,7 @@
   }
 
   function saveHomeLocation() {
-    const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
-    if (homeLocation) {
-      storage.setItem(getHomeStorageKey(), JSON.stringify(homeLocation));
-    } else {
-      storage.removeItem(getHomeStorageKey());
-    }
+    queueProtectedWrite(getHomeStorageKey(), homeLocation);
   }
 
   function renderHomeStatus() {
@@ -5476,10 +5617,9 @@
     homeSettingsMessage.dataset.tone = tone;
   }
 
-  function loadEvents(key = getLocalEventsKey()) {
+  async function loadEvents(key = getLocalEventsKey()) {
     try {
-      const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
-      const parsed = JSON.parse(storage.getItem(key) || "[]");
+      const parsed = await readProtectedValue(key, []);
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
@@ -5487,8 +5627,7 @@
   }
 
   function saveEvents() {
-    const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
-    storage.setItem(getLocalEventsKey(), JSON.stringify(events));
+    queueProtectedWrite(getLocalEventsKey(), events);
     if (plannerStorageMode === "user" && plannerUserId) {
       scheduleCloudSync();
     }
@@ -5500,7 +5639,7 @@
       return;
     }
     plannerUserId = session.user.id;
-    events = loadEvents(getLocalEventsKey());
+    events = await loadEvents(getLocalEventsKey());
     if (!plannerSupabase) {
       showCloudStorageWarning("クラウド保存を読み込めませんでした。この端末内の予定だけを表示しています。");
       return;
@@ -5520,7 +5659,7 @@
     events = (Array.isArray(data) ? data : [])
       .map((row) => normalizeCloudEvent(row))
       .filter(Boolean);
-    localStorage.setItem(getLocalEventsKey(), JSON.stringify(events));
+    queueProtectedWrite(getLocalEventsKey(), events);
   }
 
   function normalizeCloudEvent(row) {
