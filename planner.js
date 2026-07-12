@@ -1118,10 +1118,10 @@
       .map((stop) => stop.time)
       .filter(Boolean)
       .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
-    const finalTimedStop = [...detectedStops]
-      .filter((stop) => stop.time)
-      .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
-      .pop();
+    const explicitStopEnds = detectedStops
+      .filter((stop) => stop.endTime && !stop.endTimeInferred)
+      .map((stop) => stop.endTime)
+      .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
     const isTimetableSchedule = stopTimes.length >= 2;
     const detectedStart = isTimetableSchedule
       ? stopTimes[0]
@@ -1134,7 +1134,7 @@
     let start = detectedStart || detectVaguePeriodTime(`${scheduleText}\n${preparedText}`) || "10:00";
     const startMinutes = timeToMinutes(start);
     const lastStopTime = stopTimes[stopTimes.length - 1] || "";
-    const explicitStopEnd = finalTimedStop && finalTimedStop.endTime || "";
+    const explicitStopEnd = explicitStopEnds[explicitStopEnds.length - 1] || "";
     const stopBasedEnd = explicitStopEnd && timeToMinutes(explicitStopEnd) > startMinutes
       ? explicitStopEnd
       : lastStopTime && timeToMinutes(lastStopTime) > startMinutes
@@ -1277,12 +1277,14 @@
         const previous = result[result.length - 1];
         if (previous && timeToMinutes(stop.time) > timeToMinutes(previous.time)) {
           previous.endTime = stop.time;
+          previous.endTimeInferred = false;
         }
         return;
       }
       const previous = result[result.length - 1];
       if (previous && previous.time && !previous.endTime && stop.time && timeToMinutes(stop.time) > timeToMinutes(previous.time)) {
         previous.endTime = stop.time;
+        previous.endTimeInferred = true;
       }
       result.push({ ...stop });
     });
@@ -1367,6 +1369,7 @@
       id: createId(),
       time,
       endTime: range.end || "",
+      endTimeInferred: false,
       location,
       title: note || `${location}で予定`,
       place: null,
@@ -2537,6 +2540,7 @@
         id: stop.id || createStableStopId(stop, index),
         time: cleanText(stop.time || "", 5),
         endTime: cleanText(stop.endTime || "", 5),
+        endTimeInferred: Boolean(stop.endTimeInferred),
         title: cleanText(stop.title || "", 48),
         location: cleanLocation(stop.location || ""),
         place: stop.place || null,
