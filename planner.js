@@ -946,6 +946,7 @@
     pruneExpiredEvents();
     render();
     initializeMapOverview();
+    window.setTimeout(resumePendingPlaceConfirmation, 500);
     startCurrentLocationTracking();
     startExpirySweep();
     scheduleUpcomingNotifications();
@@ -2980,6 +2981,20 @@
       saveEvents();
       render();
       showSummary("予定を追加しました。場所情報はあとで再取得できます。");
+    }
+  }
+
+  function resumePendingPlaceConfirmation() {
+    if (!plannerUnlocked) {
+      return;
+    }
+    const pendingEvent = events.find((event) => {
+      const pendingMain = Boolean(event.location && event.placePending && !hasUsablePlace(event.place));
+      const pendingStop = getEventStops(event).some((stop) => stop.location && stop.placePending && !hasUsablePlace(stop.place));
+      return pendingMain || pendingStop;
+    });
+    if (pendingEvent) {
+      enrichEventPlaceInBackground(pendingEvent);
     }
   }
 
