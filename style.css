@@ -124,6 +124,38 @@ a {
   animation: ambientLineFlow 7s linear infinite;
 }
 
+.minimal-header {
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.header-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 18px rgba(35, 53, 89, 0.08);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.header-back:hover,
+.header-back:focus-visible {
+  border-color: var(--teal);
+  box-shadow: 0 10px 22px rgba(42, 157, 244, 0.18);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .logo {
   display: flex;
   align-items: center;
@@ -2633,6 +2665,29 @@ footer {
     align-items: flex-start;
     flex-direction: column;
     padding: 14px 5vw;
+  }
+
+  .header.minimal-header {
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
+    padding: 12px 5vw;
+  }
+
+  .minimal-header .logo {
+    min-width: 0;
+    font-size: 17px;
+  }
+
+  .minimal-header .logo-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .minimal-header .header-back {
+    flex: 0 0 auto;
+    min-height: 38px;
+    padding: 0 11px;
   }
 
   .nav {

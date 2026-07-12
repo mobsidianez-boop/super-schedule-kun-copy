@@ -5,20 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=ocr-route-home-1">
+  <link rel="stylesheet" href="style.css?v=minimal-app-header-1">
 </head>
 <body class="app-mode">
-  <header class="header">
+  <header class="header minimal-header">
     <a class="logo" href="super-schedule-kun.html" aria-label="超スケジュールくん ホーム">
       <span class="logo-mark">超</span>
       <span>超スケジュールくん</span>
     </a>
-    <nav class="nav" aria-label="ページナビゲーション">
-      <a href="super-schedule-kun.html">ホーム</a>
-      <a href="app.html" class="active">予定管理</a>
-      <a href="features.html">機能</a>
-      <a href="use-cases.html">活用シーン</a>
-    </nav>
+    <button class="header-back" type="button" onclick="if (history.length > 1) { history.back(); } else { location.href='super-schedule-kun.html'; }" aria-label="ひとつ前のページに戻る">
+      <span aria-hidden="true">←</span>
+      <span>戻る</span>
+    </button>
   </header>
 
   <main>
