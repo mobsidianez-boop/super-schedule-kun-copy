@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=ocr-help-safe-1">
+  <link rel="stylesheet" href="style.css?v=image-picker-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -171,7 +171,8 @@
           <form class="detect-form" id="detect-form">
             <label class="image-picker">
               <span>このデバイスの画像から読み取る</span>
-              <input id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+              <span class="image-picker-button">画像を選ぶ</span>
+              <input class="visually-hidden-file" id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
             </label>
             <div class="ocr-help">
               <button class="ocr-help-toggle" id="ocr-help-toggle" type="button" aria-expanded="false" aria-controls="ocr-help-content">読み取りやすい画像</button>
@@ -434,7 +435,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=ocr-help-safe-1"></script>
+  <script src="planner.js?v=image-picker-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
