@@ -2009,14 +2009,18 @@ h3 {
   z-index: 5000;
   display: grid;
   place-items: center;
+  height: 100dvh;
   padding: 18px;
+  overflow: hidden;
   background: rgba(25, 31, 48, 0.48);
 }
 
 .stop-editor {
   width: min(100%, 520px);
   max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - 36px);
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 20px;
   border: 1px solid rgba(49, 95, 196, 0.2);
   border-radius: 8px;
@@ -2087,7 +2091,15 @@ h3 {
 }
 
 .stop-editor-actions {
+  position: sticky;
+  bottom: -20px;
+  z-index: 2;
   justify-content: flex-end;
+  margin: 2px -20px -20px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 -10px 24px rgba(25, 31, 48, 0.08);
 }
 
 .schedule-board {
@@ -2968,6 +2980,25 @@ footer {
   .stop-editor-times {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .stop-editor-overlay {
+    place-items: start center;
+    padding: 8px;
+  }
+
+  .stop-editor {
+    max-height: calc(100dvh - 16px);
+    padding: 16px;
+  }
+
+  .stop-editor-actions {
+    bottom: -16px;
+    margin-right: -16px;
+    margin-bottom: -16px;
+    margin-left: -16px;
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
   .schedule-board-head {
