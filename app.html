@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=inline-home-1">
+  <link rel="stylesheet" href="style.css?v=ocr-help-safe-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -173,9 +173,10 @@
               <span>このデバイスの画像から読み取る</span>
               <input id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
             </label>
-            <details class="ocr-help">
-              <summary>読み取りやすい画像</summary>
-              <div class="ocr-help-content">
+            <div class="ocr-help">
+              <button class="ocr-help-toggle" id="ocr-help-toggle" type="button" aria-expanded="false" aria-controls="ocr-help-content">読み取りやすい画像</button>
+              <div class="ocr-help-content" id="ocr-help-content" hidden>
+                <p>主にメッセージアプリやメール、予定表のスクリーンショットからの読み取りを想定しています。</p>
                 <p>横書きで、時刻と予定名が同じ行にあり、上から予定順に並んだ画像が読み取りやすいです。</p>
                 <pre aria-label="読み取りやすい予定表の例">9/4 鳥取旅行
 
@@ -191,7 +192,7 @@
                   <li>縦書き、斜め文字、手書き、文字に重なる装飾は苦手です</li>
                 </ul>
               </div>
-            </details>
+            </div>
             <div class="ocr-preview" id="ocr-preview" hidden>
               <img id="ocr-preview-image" alt="選択した画像のプレビュー">
               <div>
@@ -433,7 +434,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=inline-home-routes-1"></script>
+  <script src="planner.js?v=ocr-help-safe-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

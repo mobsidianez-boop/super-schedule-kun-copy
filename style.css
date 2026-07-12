@@ -1342,7 +1342,7 @@ h3 {
   overflow: hidden;
 }
 
-.ocr-help summary {
+.ocr-help-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1353,14 +1353,14 @@ h3 {
   font-size: 14px;
   font-weight: 900;
   cursor: pointer;
-  list-style: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
 }
 
-.ocr-help summary::-webkit-details-marker {
-  display: none;
-}
-
-.ocr-help summary::after {
+.ocr-help-toggle::after {
   content: "+";
   display: grid;
   place-items: center;
@@ -1373,7 +1373,7 @@ h3 {
   line-height: 1;
 }
 
-.ocr-help[open] summary::after {
+.ocr-help-toggle[aria-expanded="true"]::after {
   content: "−";
 }
 
@@ -1387,6 +1387,10 @@ h3 {
 
 .ocr-help-content p {
   margin: 0 0 12px;
+}
+
+.ocr-help-content p + p {
+  margin-top: -4px;
 }
 
 .ocr-help-content pre {

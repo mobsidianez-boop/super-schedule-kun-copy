@@ -44,6 +44,8 @@
   const ocrPreviewImage = document.querySelector("#ocr-preview-image");
   const ocrStatus = document.querySelector("#ocr-status");
   const ocrProgress = document.querySelector("#ocr-progress");
+  const ocrHelpToggle = document.querySelector("#ocr-help-toggle");
+  const ocrHelpContent = document.querySelector("#ocr-help-content");
   const candidateBox = document.querySelector("#candidate-box");
   const candidateTitle = document.querySelector("#candidate-title");
   const candidateMeta = document.querySelector("#candidate-meta");
@@ -190,6 +192,16 @@
         return;
       }
       handleImageSelection();
+    });
+  }
+
+  if (ocrHelpToggle && ocrHelpContent) {
+    ocrHelpToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const willOpen = ocrHelpContent.hidden;
+      ocrHelpContent.hidden = !willOpen;
+      ocrHelpToggle.setAttribute("aria-expanded", String(willOpen));
     });
   }
 
