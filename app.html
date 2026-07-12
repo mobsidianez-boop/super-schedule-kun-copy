@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=home-placeholder-1">
+  <link rel="stylesheet" href="style.css?v=collapsible-panels-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -121,10 +121,13 @@
         <button class="button planner-logout-button" type="button" id="planner-logout-button" hidden>ログアウト</button>
       </div>
       <div class="planner-layout">
-        <div class="planner-panel">
+        <div class="planner-panel collapsible-panel" id="manual-event-panel">
           <div class="planner-panel-head">
             <h3>予定を登録</h3>
-            <button class="icon-button" type="button" id="clear-events-button" title="すべて削除">消去</button>
+            <div class="planner-panel-actions">
+              <button class="panel-collapse-button" type="button" data-panel-toggle aria-expanded="true" aria-controls="event-form">畳む</button>
+              <button class="icon-button" type="button" id="clear-events-button" title="すべて削除">消去</button>
+            </div>
           </div>
           <form class="planner-form" id="event-form">
             <label>
@@ -163,10 +166,13 @@
           </form>
         </div>
 
-        <div class="planner-panel">
+        <div class="planner-panel collapsible-panel" id="detect-event-panel">
           <div class="planner-panel-head">
             <h3>文章・画像から候補を検出</h3>
-            <span class="planner-hint">例: 明日18:30 渋谷で打ち合わせ</span>
+            <div class="planner-panel-actions">
+              <span class="planner-hint">例: 明日18:30 渋谷で打ち合わせ</span>
+              <button class="panel-collapse-button" type="button" data-panel-toggle aria-expanded="true" aria-controls="detect-form">畳む</button>
+            </div>
           </div>
           <form class="detect-form" id="detect-form">
             <label class="image-picker">
@@ -437,7 +443,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=home-placeholder-1"></script>
+  <script src="planner.js?v=collapsible-panels-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

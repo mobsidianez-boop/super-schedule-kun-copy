@@ -1125,6 +1125,43 @@ h3 {
   margin: 0;
 }
 
+.planner-panel-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.panel-collapse-button {
+  min-width: 58px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.panel-collapse-button:hover,
+.panel-collapse-button:focus-visible {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(42, 157, 244, 0.12);
+  outline: none;
+}
+
+.collapsible-panel.is-collapsed > :not(.planner-panel-head) {
+  display: none !important;
+}
+
+.collapsible-panel.is-collapsed > .planner-panel-head {
+  margin-bottom: 0;
+}
+
 .planner-hint,
 .planner-note {
   color: var(--muted);
@@ -2982,6 +3019,12 @@ footer {
   .planner-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .planner-panel-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
   }
 
   .planner-logout-button {

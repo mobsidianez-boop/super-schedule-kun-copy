@@ -28,6 +28,7 @@
   const plannerSupabaseSaveButton = document.querySelector("#planner-supabase-save-button");
   const plannerLogoutButton = document.querySelector("#planner-logout-button");
   const plannerAuthStatus = document.querySelector("#planner-auth-status");
+  const panelCollapseButtons = document.querySelectorAll("[data-panel-toggle]");
   const form = document.querySelector("#event-form");
   const titleInput = document.querySelector("#event-title");
   const dateInput = document.querySelector("#event-date");
@@ -240,6 +241,20 @@
   if (homeRoutesButton) {
     homeRoutesButton.addEventListener("click", () => handleRouteLookup({ origin: homeLocation, originLabel: "自宅", triggerButton: homeRoutesButton }));
   }
+
+  panelCollapseButtons.forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const panel = button.closest(".collapsible-panel");
+      if (!panel) {
+        return;
+      }
+      const collapsed = panel.classList.toggle("is-collapsed");
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.textContent = collapsed ? "開く" : "畳む";
+    });
+  });
 
   candidateAddButton.addEventListener("click", () => {
     addDetectedCandidate();
@@ -5516,6 +5531,12 @@
     }
     setHomeSettingsMessage("自宅を登録しました。地図に自宅ピンを表示しています。", "success");
     setRouteStatus("自宅を登録しました。現在地が取得できない場合のルート起点にも使います。");
+    if (homeSettings) {
+      homeSettings.hidden = true;
+    }
+    if (setHomeButton) {
+      setHomeButton.focus();
+    }
   }
 
   function removeHomeLocation() {
