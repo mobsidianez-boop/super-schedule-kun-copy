@@ -54,6 +54,13 @@
   const locateRoutesButton = document.querySelector("#locate-routes-button");
   const setHomeButton = document.querySelector("#set-home-button");
   const homeStatus = document.querySelector("#home-status");
+  const homeSettings = document.querySelector("#home-settings");
+  const homeLocationInput = document.querySelector("#home-location-input");
+  const homeSearchButton = document.querySelector("#home-search-button");
+  const homeRoutesButton = document.querySelector("#home-routes-button");
+  const homeRemoveButton = document.querySelector("#home-remove-button");
+  const homeSettingsMessage = document.querySelector("#home-settings-message");
+  const homeCandidates = document.querySelector("#home-candidates");
   const routeStatus = document.querySelector("#route-status");
   const mapContainer = document.querySelector("#planner-map");
   const routeList = document.querySelector("#route-list");
@@ -196,7 +203,19 @@
   }
 
   if (setHomeButton) {
-    setHomeButton.addEventListener("click", setHomeLocation);
+    setHomeButton.addEventListener("click", toggleHomeSettings);
+  }
+
+  if (homeSearchButton) {
+    homeSearchButton.addEventListener("click", searchHomeLocationCandidates);
+  }
+
+  if (homeRemoveButton) {
+    homeRemoveButton.addEventListener("click", removeHomeLocation);
+  }
+
+  if (homeRoutesButton) {
+    homeRoutesButton.addEventListener("click", () => handleRouteLookup({ origin: homeLocation, originLabel: "自宅", triggerButton: homeRoutesButton }));
   }
 
   candidateAddButton.addEventListener("click", () => {
@@ -3055,9 +3074,14 @@
     );
   }
 
-  async function handleRouteLookup() {
+  async function handleRouteLookup(options = {}) {
     const dayEvents = getSelectedDayEvents().filter((item) => hasRouteTargets(item));
-    if (!navigator.geolocation && !homeLocation) {
+    const requestedOrigin = options.origin && Number.isFinite(options.origin.lat) && Number.isFinite(options.origin.lon)
+      ? options.origin
+      : null;
+    const originLabel = requestedOrigin ? (options.originLabel || "指定地点") : "現在地";
+    const triggerButton = options.triggerButton || locateRoutesButton;
+    if (!requestedOrigin && !navigator.geolocation && !homeLocation) {
       setRouteStatus("このブラウザは現在地取得に対応していません。自宅を設定すると、自宅からのルートを表示できます。");
       return;
     }
@@ -3067,13 +3091,15 @@
       return;
     }
 
-    locateRoutesButton.disabled = true;
+    if (triggerButton) {
+      triggerButton.disabled = true;
+    }
     activeRouteEventId = "";
     setRouteStatus("現在地を取得しています。");
 
     try {
-      let current = currentPosition;
-      if (!current && navigator.geolocation) {
+      let current = requestedOrigin || currentPosition;
+      if (!requestedOrigin && !current && navigator.geolocation) {
         try {
           current = await getCurrentPosition();
           currentPosition = current;
@@ -3096,7 +3122,7 @@
       if (!dayEvents.length) {
         renderRouteList([]);
         plannerMap.setView([current.lat, current.lon], 15);
-        setRouteStatus(`${currentPosition ? "現在地" : "自宅"}を地図に表示しました。登録済み予定に場所がないため、移動時間は未表示です。`);
+        setRouteStatus(`${originLabel}を地図に表示しました。登録済み予定に場所がないため、移動時間は未表示です。`);
         return;
       }
 
@@ -3116,8 +3142,8 @@
       orderedTargets.forEach(drawSchedulePlaceMarker);
 
       let previous = {
-        title: currentPosition ? "現在地" : "自宅",
-        location: currentPosition ? "現在地" : "自宅",
+        title: requestedOrigin ? originLabel : (currentPosition ? "現在地" : "自宅"),
+        location: requestedOrigin ? originLabel : (currentPosition ? "現在地" : "自宅"),
         place: current,
       };
       for (const target of orderedTargets) {
@@ -3153,11 +3179,13 @@
 
       renderRouteList(routeResults);
       fitMapToContent(current, routeResults);
-      setRouteStatus("表示日の目的地を予定順に道路ルートで結びました。各区間の移動時間を下に表示しています。");
+      setRouteStatus(`${requestedOrigin ? originLabel + "から" : "表示日の"}目的地を予定順に道路ルートで結びました。各区間の移動時間を下に表示しています。`);
     } catch (error) {
       setRouteStatus(`移動時間を調べられませんでした: ${getErrorText(error)}`);
     } finally {
-      locateRoutesButton.disabled = false;
+      if (triggerButton) {
+        triggerButton.disabled = false;
+      }
     }
   }
 
@@ -5204,51 +5232,114 @@
     if (setHomeButton) {
       setHomeButton.textContent = homeLocation ? "自宅を変更" : "自宅を設定";
     }
+    if (homeRemoveButton) {
+      homeRemoveButton.hidden = !homeLocation;
+    }
+    if (homeRoutesButton) {
+      homeRoutesButton.hidden = !homeLocation;
+    }
+    if (homeLocationInput && homeLocation && !homeLocationInput.value) {
+      homeLocationInput.value = homeLocation.query || homeLocation.displayName || "";
+    }
   }
 
-  async function setHomeLocation() {
+  function toggleHomeSettings() {
     if (!ensurePlannerAccess()) {
       return;
     }
-    const address = window.prompt("自宅として登録する住所や建物名を入力してください。正確な番地を入れたくない場合は、最寄り駅や町名でも使えます。", homeLocation && (homeLocation.query || homeLocation.displayName) || "");
-    if (address === null) {
+    if (!homeSettings) {
       return;
     }
-    const query = cleanText(address, 80);
+    homeSettings.hidden = !homeSettings.hidden;
+    if (!homeSettings.hidden && homeLocationInput) {
+      homeLocationInput.focus();
+    }
+  }
+
+  async function searchHomeLocationCandidates() {
+    if (!ensurePlannerAccess() || !homeLocationInput || !homeCandidates) {
+      return;
+    }
+    const query = cleanText(homeLocationInput.value, 80);
     if (!query) {
-      if (homeLocation && window.confirm("登録済みの自宅を削除しますか？")) {
-        homeLocation = null;
-        saveHomeLocation();
-        renderHomeStatus();
-        if (homeMarker) {
-          homeMarker.remove();
-          homeMarker = null;
-        }
-      }
+      setHomeSettingsMessage("住所、駅名、町名のどれかを入力してください。", "error");
       return;
     }
-    setHomeButton.disabled = true;
+    homeSearchButton.disabled = true;
+    homeCandidates.replaceChildren();
+    setHomeSettingsMessage("自宅の候補を検索しています。");
     setRouteStatus("自宅の場所を検索しています。");
     try {
-      const candidates = await fetchPlaceCandidates(query, null, 3);
-      const selected = candidates.find((candidate) => window.confirm(`自宅の候補は「${candidate.displayName}」で合っていますか？`));
-      if (!selected) {
-        setRouteStatus("自宅の候補を確定しませんでした。入力を変えてもう一度試してください。");
+      const candidates = await fetchPlaceCandidates(query, null, 5);
+      if (!candidates.length) {
+        setHomeSettingsMessage("候補が見つかりませんでした。駅名や市区町村を追加して試してください。", "error");
+        setRouteStatus("自宅の候補が見つかりませんでした。");
         return;
       }
-      homeLocation = selected;
-      saveHomeLocation();
-      renderHomeStatus();
-      drawHomeMarker();
-      if (plannerMap) {
-        plannerMap.setView([selected.lat, selected.lon], 14);
-      }
-      setRouteStatus("自宅を登録しました。現在地が取得できない場合のルート起点にも使います。");
+      candidates.forEach((candidate) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "home-candidate";
+        const name = document.createElement("strong");
+        name.textContent = candidate.displayName || candidate.query || query;
+        const meta = document.createElement("span");
+        meta.textContent = candidate.country ? `国: ${candidate.country}` : "候補の場所";
+        button.append(name, meta);
+        button.addEventListener("click", () => selectHomeLocation(candidate));
+        homeCandidates.append(button);
+      });
+      setHomeSettingsMessage("合っている候補をタップしてください。", "success");
     } catch (error) {
+      setHomeSettingsMessage(`検索できませんでした: ${getErrorText(error)}`, "error");
       setRouteStatus(`自宅を検索できませんでした: ${getErrorText(error)}`);
     } finally {
-      setHomeButton.disabled = false;
+      homeSearchButton.disabled = false;
     }
+  }
+
+  function selectHomeLocation(candidate) {
+    if (!candidate || !Number.isFinite(candidate.lat) || !Number.isFinite(candidate.lon)) {
+      setHomeSettingsMessage("この候補には座標がありません。別の候補を選んでください。", "error");
+      return;
+    }
+    homeLocation = candidate;
+    saveHomeLocation();
+    renderHomeStatus();
+    drawHomeMarker();
+    if (plannerMap) {
+      plannerMap.setView([candidate.lat, candidate.lon], 14);
+    }
+    if (homeCandidates) {
+      homeCandidates.replaceChildren();
+    }
+    setHomeSettingsMessage("自宅を登録しました。地図に自宅ピンを表示しています。", "success");
+    setRouteStatus("自宅を登録しました。現在地が取得できない場合のルート起点にも使います。");
+  }
+
+  function removeHomeLocation() {
+    homeLocation = null;
+    saveHomeLocation();
+    renderHomeStatus();
+    if (homeLocationInput) {
+      homeLocationInput.value = "";
+    }
+    if (homeCandidates) {
+      homeCandidates.replaceChildren();
+    }
+    if (homeMarker) {
+      homeMarker.remove();
+      homeMarker = null;
+    }
+    setHomeSettingsMessage("自宅の設定を削除しました。", "success");
+    setRouteStatus("自宅の設定を削除しました。");
+  }
+
+  function setHomeSettingsMessage(message, tone = "muted") {
+    if (!homeSettingsMessage) {
+      return;
+    }
+    homeSettingsMessage.textContent = message;
+    homeSettingsMessage.dataset.tone = tone;
   }
 
   function loadEvents(key = getLocalEventsKey()) {

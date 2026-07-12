@@ -1457,6 +1457,102 @@ h3 {
   white-space: nowrap;
 }
 
+.home-settings {
+  margin: 14px 22px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.home-settings-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.home-settings-row label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.home-settings-row input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.home-settings-row input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 4px rgba(42, 157, 244, 0.14);
+}
+
+.home-settings-message {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.home-settings-message[data-tone="success"] {
+  color: #14715e;
+}
+
+.home-settings-message[data-tone="error"] {
+  color: #a13d4f;
+}
+
+.home-candidates {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.home-candidates:empty {
+  display: none;
+}
+
+.home-candidate {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #ffffff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-candidate:hover,
+.home-candidate:focus-visible {
+  border-color: var(--teal);
+  box-shadow: 0 8px 18px rgba(42, 157, 244, 0.14);
+  outline: none;
+}
+
+.home-candidate strong {
+  font-size: 14px;
+}
+
+.home-candidate span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .planner-map .leaflet-container,
 .planner-map .leaflet-pane,
 .planner-map .leaflet-map-pane {
@@ -2855,6 +2951,15 @@ footer {
     height: 280px;
     margin-left: 16px;
     margin-right: 16px;
+  }
+
+  .home-settings {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+
+  .home-settings-row {
+    grid-template-columns: 1fr;
   }
 
   .auth-session {

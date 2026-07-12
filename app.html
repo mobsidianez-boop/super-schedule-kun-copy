@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=ocr-help-1">
+  <link rel="stylesheet" href="style.css?v=inline-home-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -227,6 +227,19 @@
           <span class="home-status" id="home-status">自宅未設定</span>
           <div class="planner-summary" id="planner-summary">予定を読み込んでいます。</div>
         </div>
+        <section class="home-settings" id="home-settings" aria-label="自宅の設定" hidden>
+          <div class="home-settings-row">
+            <label>
+              <span>自宅の住所・最寄り駅</span>
+              <input id="home-location-input" type="text" maxlength="80" placeholder="例: 高松駅、渋谷区道玄坂">
+            </label>
+            <button class="button primary" type="button" id="home-search-button">候補を検索</button>
+            <button class="button" type="button" id="home-routes-button" hidden>自宅からルート</button>
+            <button class="button" type="button" id="home-remove-button" hidden>設定を削除</button>
+          </div>
+          <p class="home-settings-message" id="home-settings-message">正確な番地を登録したくない場合は、最寄り駅や町名でも使えます。</p>
+          <div class="home-candidates" id="home-candidates"></div>
+        </section>
         <div class="route-status" id="route-status">現在地と予定場所を地図で確認できます。</div>
         <div class="planner-map" id="planner-map" aria-label="現在地と予定場所の地図"></div>
         <div class="map-legend" aria-label="地図のピン説明">
@@ -420,7 +433,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=timetable-pins-5"></script>
+  <script src="planner.js?v=inline-home-routes-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
