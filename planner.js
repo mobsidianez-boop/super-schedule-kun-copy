@@ -1108,15 +1108,19 @@
 
     const base = new Date();
     const rawScheduleText = cleanText(normalizeScheduleText(relevantRawText), 900);
-    const detectedDate = detectDate(scheduleText, base) || detectDate(preparedText, base) || detectDate(text, base) || detectDate(rawScheduleText, base);
+    const ocrTitleHint = getActiveOcrTitleHint(rawText, scheduleText, relevantRawText);
+    const detectionSource = [ocrTitleHint, scheduleText, relevantRawText, preparedText, rawScheduleText, text]
+      .filter(Boolean)
+      .join("\n");
+    const detectedDate = detectDate(ocrTitleHint, base) || detectDate(detectionSource, base);
     const detectedStops = mergeDetectedStops(extractScheduleStops(relevantRawText), extractScheduleStops(preparedText));
-    const detectedRange = detectTimeRange(scheduleText);
-    const fallbackRange = detectedRange.start && detectedRange.end ? detectedRange : detectTimeRange(preparedText);
+    const detectedRange = detectTimeRange(`${ocrTitleHint}\n${scheduleText}`);
+    const fallbackRange = detectedRange.start && detectedRange.end ? detectedRange : detectTimeRange(detectionSource);
     const stopTimes = detectedStops
       .map((stop) => stop.time)
       .filter(Boolean)
       .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
-    const detectedStart = fallbackRange.start || detectTime(scheduleText) || detectTime(preparedText) || stopTimes[0] || "";
+    const detectedStart = fallbackRange.start || detectTime(ocrTitleHint) || detectTime(scheduleText) || detectTime(detectionSource) || stopTimes[0] || "";
     if (!detectedDate && !detectedStart) {
       setDetectMessage("予定の候補には日付か時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
       return null;
@@ -1132,10 +1136,9 @@
     if (detectedStart && isAmbiguousTimeText(`${scheduleText}\n${preparedText}`, detectedStart)) {
       ({ start, end } = confirmAmbiguousTimePeriod(start, end));
     }
-    const detectedLocation = detectLocation(scheduleText);
-    const ocrTitleHint = getActiveOcrTitleHint(rawText, scheduleText, relevantRawText);
+    const detectedLocation = detectBestLocation([scheduleText, ocrTitleHint, relevantRawText, preparedText]);
     let title = ocrTitleHint || detectTitle(scheduleText, detectedLocation);
-    const date = resolveDetectedDate(`${scheduleText}\n${preparedText}\n${rawScheduleText}`, detectedDate, base, start, end);
+    const date = resolveDetectedDate(detectionSource, detectedDate, base, start, end);
     if (!date) {
       return null;
     }
@@ -1285,7 +1288,7 @@
     if (isTravelDurationText(rest) || isDateTimeOnlyText(rest)) {
       return null;
     }
-    const fallbackLocation = getSafeLocationFallback(rest);
+    const fallbackLocation = looksLikePlaceName(rest) ? getSafeLocationFallback(rest) : "";
     const location = cleanLocation(detectLocation(rest) || detectLocation(normalized) || fallbackLocation);
     if (isBadLocationCandidate(location)) {
       return null;
@@ -1773,9 +1776,6 @@
       return false;
     }
     if (isDateTimeOnlyText(value) || hasDateTimeSignalOnly(value)) {
-      return false;
-    }
-    if (hasDateSignal(value) && !hasTitleKeyword(value) && !hasEventWord(value)) {
       return false;
     }
     if (/^(午前|午後)?\s*\d{1,2}[:：]\d{2}$/.test(value)) {
@@ -4093,6 +4093,14 @@
       return cleanLocation(atPlace[1]);
     }
 
+    const activityPlace = normalized.match(/([^\s、。]{2,36}?)(?:観光|見学|散策|参拝|鑑賞|体験|食事|ランチ|休憩|集合|チェックイン|チェックアウト|買い物)(?:する|予定|へ|に|$)/);
+    if (activityPlace && !isBadLocationCandidate(activityPlace[1])) {
+      const candidate = cleanLocation(activityPlace[1]);
+      if (isPlausibleActivityPlace(candidate)) {
+        return candidate;
+      }
+    }
+
     const titleLocation = inferLocationFromTitle(normalized);
     if (titleLocation) {
       return titleLocation;
@@ -4101,6 +4109,42 @@
     const suffixPlace = normalized.match(/([^\s、。]{1,32}(?:駅|港|店|カフェ|ホール|大学|高校|学校|公園|寺|神社|博物館|美術館|資料館|水族館|動物園|映画館|劇場|病院|美容院|歯医者|スタジオ|オフィス|ビル|会館|センター|空港|ターミナル))/);
     const suffixLocation = cleanLocation(suffixPlace ? suffixPlace[1] : "");
     return isBadLocationCandidate(suffixLocation) ? "" : suffixLocation;
+  }
+
+  function detectBestLocation(sources) {
+    const candidates = [];
+    let order = 0;
+    (Array.isArray(sources) ? sources : [sources]).forEach((source, sourceIndex) => {
+      String(source || "")
+        .split(/[\n。！？!?]/)
+        .map((line) => normalizeScheduleText(line).trim())
+        .filter(Boolean)
+        .forEach((line) => {
+          const location = cleanLocation(detectLocation(line));
+          if (!location || isBadLocationCandidate(location)) {
+            order += 1;
+            return;
+          }
+          candidates.push({
+            location,
+            score: scoreLocationCandidate(location, line, sourceIndex, order),
+            order,
+          });
+          order += 1;
+        });
+    });
+    candidates.sort((a, b) => b.score - a.score || a.order - b.order || b.location.length - a.location.length);
+    return candidates[0] ? candidates[0].location : "";
+  }
+
+  function scoreLocationCandidate(location, sourceLine, sourceIndex, order) {
+    let score = Math.max(0, 8 - sourceIndex * 2) + Math.max(0, 4 - order * 0.2);
+    if (/[都道府県市区町村丁目番地]/.test(location)) score += 10;
+    if (/(駅|港|空港|寺|神社|城|砂丘|温泉|公園|博物館|美術館|資料館|水族館|動物園|映画館|劇場|ホール|会館|センター|ホテル|旅館|店|カフェ|レストラン|病院|学校|大学|展望台|市場|ターミナル)$/.test(location)) score += 9;
+    if (/(場所|会場|集合場所|行き先)[:：]/.test(sourceLine)) score += 12;
+    if (new RegExp(`${escapeRegExp(location)}(?:で|にて|へ|に)(?:行く|向かう|集合|到着|観光|見学|散策|参拝|食事)?`).test(sourceLine)) score += 6;
+    if (isTravelDurationText(location) || hasDateTimeSignalOnly(location)) score -= 30;
+    return score;
   }
 
   function inferLocationFromTitle(title) {
@@ -4223,6 +4267,36 @@
       .replace(/(で|にて|集合|予定|予約|から|まで|到着|出発).*$/, "")
       .trim();
     return isDateTimeOnlyText(cleaned) ? "" : cleaned;
+  }
+
+  function looksLikePlaceName(value) {
+    const text = cleanText(stripDateTime(normalizeScheduleText(value)), 64)
+      .replace(/^(?:で|にて|に|へ|から|まで)/, "")
+      .trim();
+    if (!text || isBadLocationCandidate(text)) {
+      return false;
+    }
+    if (/[都道府県市区町村丁目番地]/.test(text)) {
+      return true;
+    }
+    if (/(駅|港|空港|寺|神社|城|砂丘|温泉|公園|博物館|美術館|資料館|水族館|動物園|映画館|劇場|ホール|会館|センター|ホテル|旅館|店|カフェ|レストラン|病院|学校|大学|展望台|市場|ターミナル)$/.test(text)) {
+      return true;
+    }
+    return /(?:へ|に)行く|(?:で|にて)(?:観光|見学|散策|参拝|食事|集合)/.test(text);
+  }
+
+  function isPlausibleActivityPlace(value) {
+    const text = cleanText(stripDateTime(normalizeScheduleText(value)), 48)
+      .replace(/^(?:みんな|全員|家族|友達|友人|一緒に?|午前|午後|朝|昼|夜|まず|次に|その後)/, "")
+      .replace(/^(?:は|が|を|に|で|へ)+/, "")
+      .trim();
+    if (!text || text.length < 2 || isBadLocationCandidate(text)) {
+      return false;
+    }
+    if (/^(?:旅行|予定|観光|見学|散策|参拝|鑑賞|体験|食事|ランチ|休憩|集合|買い物|チェックイン|チェックアウト)$/.test(text)) {
+      return false;
+    }
+    return true;
   }
 
   function getSafeLocationFallback(value) {
