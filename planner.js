@@ -2325,6 +2325,45 @@
     }
   }
 
+  function normalizeJapanesePostalCode(value) {
+    const normalized = String(value || "")
+      .replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
+      .replace(/[‐‑‒–—―ー−－]/g, "-")
+      .replace(/〒/g, " ");
+    const match = normalized.match(/(?:^|\D)(\d{3})\s*-?\s*(\d{4})(?:\D|$)/);
+    return match ? `${match[1]}-${match[2]}` : "";
+  }
+
+  function removeJapanesePostalCode(value) {
+    return cleanText(String(value || "")
+      .replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
+      .replace(/[‐‑‒–—―ー−－]/g, "-")
+      .replace(/〒?\s*\d{3}\s*-?\s*\d{4}/g, " ")
+      .replace(/\s+/g, " "), 80);
+  }
+
+  async function fetchJapanesePostalCodePlaces(postalCode, limit = 5) {
+    try {
+      const params = new URLSearchParams({
+        format: "jsonv2",
+        postalcode: postalCode,
+        country: "Japan",
+        countrycodes: "jp",
+        limit: String(limit),
+        addressdetails: "1",
+        "accept-language": "ja",
+      });
+      const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {}, 5500);
+      if (!response.ok) {
+        return [];
+      }
+      const places = await response.json();
+      return Array.isArray(places) ? places.map((place) => ({ ...place, provider: "Nominatim" })) : [];
+    } catch {
+      return [];
+    }
+  }
+
   async function fetchPhotonPlaces(query, limit, proximity = null, area = null) {
     try {
       const params = new URLSearchParams({
@@ -5282,9 +5321,31 @@
     setHomeSettingsMessage("自宅の候補を検索しています。");
     setRouteStatus("自宅の場所を検索しています。");
     try {
-      const candidates = await fetchPlaceCandidates(query, null, 5);
+      const postalCode = normalizeJapanesePostalCode(query);
+      const locationHints = postalCode ? removeJapanesePostalCode(query) : query;
+      const [postalPlaces, hintedCandidates] = await Promise.all([
+        postalCode ? fetchJapanesePostalCodePlaces(postalCode, 5) : Promise.resolve([]),
+        locationHints ? fetchPlaceCandidates(locationHints, null, 5) : Promise.resolve([]),
+      ]);
+      const postalCandidates = postalPlaces.map((place) => makePlaceIntel(
+        query,
+        postalCode,
+        place,
+        null,
+        buildPlaceSearchQueries(`${postalCode} 日本`),
+        null,
+      ));
+      const candidateKeys = new Set();
+      const candidates = [...hintedCandidates, ...postalCandidates].filter((candidate) => {
+        const key = `${Number(candidate.lat).toFixed(5)}:${Number(candidate.lon).toFixed(5)}:${candidate.displayName || ""}`;
+        if (candidateKeys.has(key)) {
+          return false;
+        }
+        candidateKeys.add(key);
+        return true;
+      }).slice(0, 5);
       if (!candidates.length) {
-        setHomeSettingsMessage("候補が見つかりませんでした。駅名や市区町村を追加して試してください。", "error");
+        setHomeSettingsMessage("候補が見つかりませんでした。郵便番号を確認するか、駅名や市区町村を追加してください。", "error");
         setRouteStatus("自宅の候補が見つかりませんでした。");
         return;
       }
