@@ -237,10 +237,8 @@
     saveEvents();
     if (events.some((item) => item.id === nextEvent.id)) {
       scheduleEventNotification(nextEvent, permissionPromise);
-      if (!nextEvent.fromOcr) {
+      if (nextEvent.placePending || nextEvent.stopsPending) {
         enrichEventPlaceInBackground(nextEvent);
-      } else if (nextEvent.placePending || nextEvent.stopsPending) {
-        setDetectMessage("予定を登録しました。座標は場所候補を確認したあとに保存します。");
       }
     }
     viewDateInput.value = detectedCandidate.date;
@@ -1113,14 +1111,21 @@
       .filter(Boolean)
       .join("\n");
     const detectedDate = detectDate(ocrTitleHint, base) || detectDate(detectionSource, base);
-    const detectedStops = mergeDetectedStops(extractScheduleStops(relevantRawText), extractScheduleStops(preparedText));
+    const detectedStops = finalizeDetectedStops(mergeDetectedStops(extractScheduleStops(relevantRawText), extractScheduleStops(preparedText)));
     const detectedRange = detectTimeRange(`${ocrTitleHint}\n${scheduleText}`);
     const fallbackRange = detectedRange.start && detectedRange.end ? detectedRange : detectTimeRange(detectionSource);
     const stopTimes = detectedStops
       .map((stop) => stop.time)
       .filter(Boolean)
       .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
-    const detectedStart = fallbackRange.start || detectTime(ocrTitleHint) || detectTime(scheduleText) || detectTime(detectionSource) || stopTimes[0] || "";
+    const finalTimedStop = [...detectedStops]
+      .filter((stop) => stop.time)
+      .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
+      .pop();
+    const isTimetableSchedule = stopTimes.length >= 2;
+    const detectedStart = isTimetableSchedule
+      ? stopTimes[0]
+      : fallbackRange.start || detectTime(ocrTitleHint) || detectTime(scheduleText) || detectTime(detectionSource) || stopTimes[0] || "";
     if (!detectedDate && !detectedStart) {
       setDetectMessage("予定の候補には日付か時刻が必要です。例: 明日18:30 渋谷で打ち合わせ");
       return null;
@@ -1129,10 +1134,14 @@
     let start = detectedStart || detectVaguePeriodTime(`${scheduleText}\n${preparedText}`) || "10:00";
     const startMinutes = timeToMinutes(start);
     const lastStopTime = stopTimes[stopTimes.length - 1] || "";
-    const stopBasedEnd = lastStopTime && timeToMinutes(lastStopTime) > startMinutes
+    const explicitStopEnd = finalTimedStop && finalTimedStop.endTime || "";
+    const stopBasedEnd = explicitStopEnd && timeToMinutes(explicitStopEnd) > startMinutes
+      ? explicitStopEnd
+      : lastStopTime && timeToMinutes(lastStopTime) > startMinutes
       ? minutesToTime(Math.min(timeToMinutes(lastStopTime) + 60, 23 * 60 + 59))
       : "";
-    let end = fallbackRange.end || stopBasedEnd || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
+    let end = (isTimetableSchedule ? stopBasedEnd : fallbackRange.end || stopBasedEnd)
+      || minutesToTime(Math.min(startMinutes + 60, 23 * 60 + 59));
     if (detectedStart && isAmbiguousTimeText(`${scheduleText}\n${preparedText}`, detectedStart)) {
       ({ start, end } = confirmAmbiguousTimePeriod(start, end));
     }
@@ -1218,10 +1227,10 @@
     const seen = new Set();
     chunks.forEach((chunk) => {
       const stop = parseStopLine(chunk);
-      if (!stop || !stop.location) {
+      if (!stop || (!stop.location && !stop.title)) {
         return;
       }
-      const key = `${stop.time}|${stop.location}|${stop.title}`;
+      const key = `${stop.time}|${stop.endTime || ""}|${stop.location}|${stop.title}`;
       if (seen.has(key)) {
         return;
       }
@@ -1235,10 +1244,10 @@
     const stops = [];
     const seen = new Set();
     groups.flat().forEach((stop) => {
-      if (!stop || !stop.location) {
+      if (!stop || (!stop.location && !stop.title)) {
         return;
       }
-      const sameLocationIndex = stops.findIndex((item) => item.location === stop.location);
+      const sameLocationIndex = stop.location ? stops.findIndex((item) => item.location === stop.location) : -1;
       if (!stop.time && sameLocationIndex >= 0 && stops[sameLocationIndex].time) {
         return;
       }
@@ -1246,7 +1255,7 @@
         seen.delete(`${stops[sameLocationIndex].time || ""}|${stops[sameLocationIndex].location}|${stops[sameLocationIndex].title || ""}`);
         stops.splice(sameLocationIndex, 1);
       }
-      const key = `${stop.time || ""}|${stop.location}|${stop.title || ""}`;
+      const key = `${stop.time || ""}|${stop.endTime || ""}|${stop.location || ""}|${stop.title || ""}`;
       if (seen.has(key)) {
         return;
       }
@@ -1256,10 +1265,61 @@
     return stops.slice(0, 8);
   }
 
+  function finalizeDetectedStops(stops) {
+    const ordered = [...stops].sort((a, b) => {
+      const aTime = a.time ? timeToMinutes(a.time) : 24 * 60;
+      const bTime = b.time ? timeToMinutes(b.time) : 24 * 60;
+      return aTime - bTime;
+    });
+    const result = [];
+    ordered.forEach((stop) => {
+      if (stop.time && !stop.location && /^(?:終了|解散|予定終了|日程終了)$/.test(cleanText(stop.title, 24))) {
+        const previous = result[result.length - 1];
+        if (previous && timeToMinutes(stop.time) > timeToMinutes(previous.time)) {
+          previous.endTime = stop.time;
+        }
+        return;
+      }
+      const previous = result[result.length - 1];
+      if (previous && previous.time && !previous.endTime && stop.time && timeToMinutes(stop.time) > timeToMinutes(previous.time)) {
+        previous.endTime = stop.time;
+      }
+      result.push({ ...stop });
+    });
+    return result.slice(0, 8);
+  }
+
   function splitScheduleTextByTime(text) {
-    const normalized = normalizeScheduleText(text)
-      .replace(/[。]/g, "。 ")
-      .replace(/[、]/g, "、 ");
+    const rawLines = String(text || "")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map((line) => sanitizeDetectedScheduleLine(line))
+      .filter(Boolean);
+    const rows = [];
+    let pendingTime = "";
+    rawLines.forEach((line) => {
+      const normalizedLine = normalizeScheduleText(line);
+      if (isStandaloneTimeText(normalizedLine)) {
+        pendingTime = normalizedLine;
+        return;
+      }
+      if (pendingTime) {
+        rows.push(`${pendingTime} ${normalizedLine}`);
+        pendingTime = "";
+        return;
+      }
+      if (hasTimeSignal(normalizedLine)) {
+        rows.push(normalizedLine);
+      }
+    });
+    if (pendingTime) {
+      rows.push(pendingTime);
+    }
+    if (rows.length >= 2) {
+      return rows;
+    }
+
+    const normalized = normalizeScheduleText(text).replace(/[。]/g, "。 ").replace(/[、]/g, "、 ");
     const timePattern = /(?:午前|午後)?\s*(?:[01]?\d|2[0-3])[:：][0-5]\d|(?:午前|午後)?\s*(?:[01]?\d|2[0-3])時(?:[0-5]?\d分?)?/g;
     const matches = [...normalized.matchAll(timePattern)];
     if (matches.length <= 1) {
@@ -1276,14 +1336,18 @@
   }
 
   function parseStopLine(line) {
-    const normalized = cleanText(normalizeScheduleText(line), 120);
+    const normalized = cleanText(normalizeScheduleText(sanitizeDetectedScheduleLine(line)), 120);
     if (!normalized) {
       return null;
     }
     const routeMode = detectRouteMode(normalized);
+    const range = detectTimeRange(normalized);
     const timeMatch = normalized.match(/^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])[:：][0-5]\d|^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])時(?:[0-5]?\d分?)?/);
-    const time = timeMatch ? (detectTime(timeMatch[0]) || "") : "";
-    const rest = cleanText(timeMatch ? normalized.slice(timeMatch[0].length) : normalized, 100)
+    const time = range.start || (timeMatch ? (detectTime(timeMatch[0]) || "") : "");
+    const consumedTime = range.start && range.end
+      ? normalized.match(/^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])(?:[:：][0-5]\d|時(?:[0-5]?\d分?)?)\s*(?:から|〜|～|-|－)\s*(?:午前|午後)?\s*(?:[01]?\d|2[0-3])(?:[:：][0-5]\d|時(?:[0-5]?\d分?)?)/)?.[0]
+      : timeMatch && timeMatch[0];
+    const rest = cleanText(consumedTime ? normalized.slice(consumedTime.length) : normalized, 100)
       .replace(/^\[(車|徒歩|公共交通|バス|電車|フェリー|船|飛行機|航空|drive|car|walk|transit|bus|train|ferry|ship|boat|flight|air)\]\s*/i, "")
       .replace(/^[\s、。・:：-]+/, "");
     if (isTravelDurationText(rest) || isDateTimeOnlyText(rest)) {
@@ -1295,23 +1359,24 @@
       return null;
     }
     const note = buildReadableStopTitle(rest, location);
-    if (!location) {
+    if (!note && !location) {
       return null;
     }
     return {
       id: createId(),
       time,
+      endTime: range.end || "",
       location,
       title: note || `${location}で予定`,
       place: null,
-      placePending: true,
+      placePending: Boolean(location),
       routeMode,
     };
   }
 
   function formatStopsInput(stops) {
     return getEventStops(stops)
-      .map((stop) => [stop.time, stop.routeMode && stop.routeMode !== "auto" ? `[${getRouteModeLabel(stop.routeMode)}]` : "", stop.location, stop.title].filter(Boolean).join(" "))
+      .map((stop) => [stop.endTime ? `${stop.time}-${stop.endTime}` : stop.time, stop.routeMode && stop.routeMode !== "auto" ? `[${getRouteModeLabel(stop.routeMode)}]` : "", stop.location, stop.title].filter(Boolean).join(" "))
       .join("\n");
   }
 
@@ -1341,7 +1406,7 @@
   function mergeEditedStops(event, nextStops) {
     const previous = getEventStops(event);
     return nextStops.map((stop) => {
-      const match = previous.find((item) => item.time === stop.time && item.location === stop.location && item.title === stop.title)
+      const match = previous.find((item) => item.time === stop.time && item.endTime === stop.endTime && item.location === stop.location && item.title === stop.title)
         || previous.find((item) => item.time === stop.time && item.location === stop.location);
       return match ? { ...stop, id: match.id, place: match.place || null, placePending: !match.place, routeMode: normalizeRouteMode(stop.routeMode || match.routeMode) } : stop;
     });
@@ -1944,16 +2009,43 @@
     if (!lines.length) {
       return cleanOcrText(data && data.text);
     }
-    return sortOcrLinesInReadingOrder(lines)
-      .filter((line) => isLikelyHorizontalOcrLine(line))
-      .map((line) => line.text || "")
-      .join("\n")
-      .split("\n")
-      .map((line) => line.trim())
+    return buildOcrReadingRows(lines)
+      .map((line) => sanitizeDetectedScheduleLine(line))
       .filter((line) => line && isLikelyOcrTextLine(line))
       .join("\n")
       .replace(/[ \t]+/g, " ")
       .slice(0, 900);
+  }
+
+  function buildOcrReadingRows(lines) {
+    const ordered = sortOcrLinesInReadingOrder(lines)
+      .filter((line) => isLikelyHorizontalOcrLine(line));
+    const rows = [];
+    ordered.forEach((line) => {
+      const box = line.bbox || {};
+      const top = Number(box.y0) || 0;
+      const bottom = Number(box.y1) || top;
+      const center = (top + bottom) / 2;
+      const height = Math.max(1, bottom - top);
+      const existing = rows.find((row) => {
+        const overlap = Math.max(0, Math.min(bottom, row.bottom) - Math.max(top, row.top));
+        return overlap / Math.max(1, Math.min(height, row.height)) >= 0.38
+          || Math.abs(center - row.center) <= Math.max(height, row.height) * 0.38;
+      });
+      const item = { text: line.text || "", x: Number(box.x0) || 0 };
+      if (existing) {
+        existing.items.push(item);
+        existing.top = Math.min(existing.top, top);
+        existing.bottom = Math.max(existing.bottom, bottom);
+        existing.height = Math.max(1, existing.bottom - existing.top);
+        existing.center = (existing.top + existing.bottom) / 2;
+      } else {
+        rows.push({ items: [item], top, bottom, center, height });
+      }
+    });
+    return rows
+      .sort((a, b) => a.top - b.top)
+      .map((row) => row.items.sort((a, b) => a.x - b.x).map((item) => item.text).join(" "));
   }
 
   function sortOcrLinesInReadingOrder(lines) {
@@ -1999,7 +2091,7 @@
     return String(value || "")
       .replace(/\r/g, "\n")
       .split("\n")
-      .map((line) => line.trim())
+      .map((line) => sanitizeDetectedScheduleLine(line))
       .filter((line) => line && isLikelyOcrTextLine(line))
       .join("\n")
       .replace(/[ \t]+/g, " ")
@@ -2020,8 +2112,26 @@
     if (/^[A-Za-z0-9+/=_-]{10,}$/.test(value) && !hasDateSignal(value) && !hasTimeSignal(value)) {
       return false;
     }
+    if (/^[A-Za-z0-9\s._+\-/]+$/.test(value) && !hasDateSignal(value) && !hasTimeSignal(value)) {
+      return false;
+    }
     const meaningful = value.replace(/[^\p{L}\p{N}]/gu, "");
     return meaningful.length >= 2;
+  }
+
+  function sanitizeDetectedScheduleLine(value) {
+    return String(value || "")
+      .replace(/[％%]+/g, " ")
+      .replace(/(?:^|\s)[A-Za-z]{0,3}\d{2,}[A-Za-z0-9_-]*(?=\s|$)/g, " ")
+      .replace(/(?:^|\s)[A-Za-z0-9]{1,2}(?=\s|$)/g, " ")
+      .replace(/[|｜]{2,}/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isStandaloneTimeText(value) {
+    const text = normalizeScheduleText(value);
+    return /^(?:午前|午後)?\s*(?:[01]?\d|2[0-3])(?:[:：][0-5]\d|時(?:[0-5]?\d分?)?)$/.test(text);
   }
 
   function getErrorText(error) {
@@ -2425,17 +2535,18 @@
       .map((stop, index) => ({
         id: stop.id || createStableStopId(stop, index),
         time: cleanText(stop.time || "", 5),
+        endTime: cleanText(stop.endTime || "", 5),
         title: cleanText(stop.title || "", 48),
         location: cleanLocation(stop.location || ""),
         place: stop.place || null,
         placePending: Boolean(stop.placePending),
         routeMode: normalizeRouteMode(stop.routeMode),
       }))
-      .filter((stop) => stop.location);
+      .filter((stop) => stop.location || stop.title);
   }
 
   function createStableStopId(stop, index = 0) {
-    const source = `${stop && stop.time || ""}|${stop && stop.location || ""}|${stop && stop.title || ""}|${index}`;
+    const source = `${stop && stop.time || ""}|${stop && stop.endTime || ""}|${stop && stop.location || ""}|${stop && stop.title || ""}|${index}`;
     let hash = 0;
     for (let charIndex = 0; charIndex < source.length; charIndex += 1) {
       hash = ((hash << 5) - hash + source.charCodeAt(charIndex)) | 0;
@@ -2459,6 +2570,9 @@
       });
     }
     getEventStops(event).forEach((stop) => {
+      if (!stop.location) {
+        return;
+      }
       targets.push({
         id: stop.id,
         eventId: event.id,
@@ -2829,6 +2943,10 @@
       }
       const stops = [];
       for (const stop of getEventStops(event)) {
+        if (!stop.location) {
+          stops.push({ ...stop, place: null, placePending: false });
+          continue;
+        }
         const contextEvent = { ...event, place, proximityPlaces: knownPlaces };
         const stopPlace = stop.placePending && !stop.place
           ? await confirmPlaceCandidate(stop.location, contextEvent)
@@ -3597,6 +3715,10 @@
       }
       const stops = [];
       for (const stop of getEventStops(event)) {
+        if (!stop.location) {
+          stops.push({ ...stop, place: null, placePending: false });
+          continue;
+        }
         const contextEvent = { ...event, place, proximityPlaces: knownPlaces };
         const stopPlace = !stop.place || !Number.isFinite(stop.place.lat) || !Number.isFinite(stop.place.lon)
           ? await fetchPlaceIntel(stop.location, contextEvent)
@@ -3633,6 +3755,10 @@
     }
     const stops = [];
     for (const stop of getEventStops(event)) {
+      if (!stop.location) {
+        stops.push({ ...stop, place: null, placePending: false });
+        continue;
+      }
       let stopPlace = stop.place;
       if (!stopPlace || !Number.isFinite(stopPlace.lat) || !Number.isFinite(stopPlace.lon)) {
         setRouteStatus(`${stop.location} の座標を調べています。`);
@@ -4686,9 +4812,9 @@
         .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
         .forEach((stop) => {
           timelineBoard.append(createTimelineRow(
-            stop.time,
+            stop.endTime ? `${stop.time}-${stop.endTime}` : stop.time,
             stop.title,
-            `場所: ${stop.location}`,
+            stop.location ? `場所: ${stop.location}` : "場所未設定",
             false,
             item.id,
             { stopId: stop.id },
