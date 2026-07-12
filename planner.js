@@ -1137,7 +1137,8 @@
       ({ start, end } = confirmAmbiguousTimePeriod(start, end));
     }
     const detectedLocation = detectBestLocation([scheduleText, ocrTitleHint, relevantRawText, preparedText]);
-    let title = ocrTitleHint || detectTitle(scheduleText, detectedLocation);
+    const titleSource = pickScheduleTitleSource(relevantRawText || preparedText, scheduleText);
+    let title = ocrTitleHint || detectTitle(titleSource || scheduleText, detectLocation(titleSource) || detectedLocation);
     const date = resolveDetectedDate(detectionSource, detectedDate, base, start, end);
     if (!date) {
       return null;
@@ -1456,6 +1457,26 @@
       .sort((a, b) => b.signal - a.signal || b.score - a.score || a.line.length - b.line.length);
 
     return scored[0] ? scored[0].line : "";
+  }
+
+  function pickScheduleTitleSource(text, fallback = "") {
+    const lines = getUsefulMessageLines(text)
+      .map((line, index) => ({ line: normalizeScheduleText(line), index }))
+      .filter((item) => item.line && !isTravelDurationText(item.line));
+    const candidates = lines
+      .map((item) => {
+        let score = Math.max(0, 6 - item.index);
+        if (hasTitleKeyword(item.line)) score += 12;
+        if (hasEventWord(item.line)) score += 8;
+        if (hasDateSignal(item.line)) score += 5;
+        if (!hasTimeSignal(item.line)) score += 5;
+        if (hasTimeSignal(item.line) && detectLocation(item.line)) score -= 7;
+        if (/(観光|見学|散策|参拝|鑑賞|体験|食事|ランチ|休憩|集合|チェックイン|チェックアウト|買い物)$/.test(stripDateTime(item.line))) score -= 6;
+        return { ...item, score };
+      })
+      .filter((item) => item.score >= 5)
+      .sort((a, b) => b.score - a.score || a.index - b.index || a.line.length - b.line.length);
+    return candidates[0] ? candidates[0].line : fallback;
   }
 
   function buildScheduleTextWindows(lines) {
