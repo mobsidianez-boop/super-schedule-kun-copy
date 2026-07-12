@@ -1935,6 +1935,74 @@ h3 {
   justify-content: flex-end;
 }
 
+.event-stop-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.event-stop-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-stop-row:last-child {
+  border-bottom: 0;
+}
+
+.event-stop-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.event-stop-details strong,
+.event-stop-details span {
+  overflow-wrap: anywhere;
+}
+
+.event-stop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.event-stop-actions .timeline-delete {
+  margin-top: 0;
+}
+
+.place-search-status {
+  color: #315fc4 !important;
+}
+
+.place-search-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border: 2px solid rgba(49, 95, 196, 0.25);
+  border-top-color: #315fc4;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: placeSearchSpin 800ms linear infinite;
+}
+
+.place-search-ready {
+  color: #3f6f64 !important;
+}
+
+@keyframes placeSearchSpin {
+  to { transform: rotate(360deg); }
+}
+
 .schedule-board {
   margin: 18px 22px 0;
   padding-top: 16px;
@@ -2800,6 +2868,14 @@ footer {
 
   .all-events-board li {
     grid-template-columns: 1fr;
+  }
+
+  .event-stop-row {
+    grid-template-columns: 1fr;
+  }
+
+  .event-stop-actions {
+    justify-content: flex-start;
   }
 
   .schedule-board-head {

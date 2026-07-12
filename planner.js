@@ -112,6 +112,7 @@
   let expirySweepId = null;
   let passwordSetupPromptOpen = false;
   const placeLookupIds = new Set();
+  const activePlaceSearchKeys = new Set();
   const placeSearchCache = new Map();
 
   const today = toDateInputValue(new Date());
@@ -2955,6 +2956,17 @@
       return;
     }
 
+    const searchKeys = [];
+    if (mainNeedsLookup) {
+      searchKeys.push(`${event.id}:main`);
+    }
+    getEventStops(event).forEach((stop) => {
+      if (stop.location && stop.placePending && !stop.place) {
+        searchKeys.push(`${event.id}:${stop.id}`);
+      }
+    });
+    searchKeys.forEach((key) => activePlaceSearchKeys.add(key));
+    render();
     showSummary("予定を追加しました。場所の座標を調べています。リアルタイム混雑は交通API接続時だけ表示します。");
     try {
       const knownPlaces = [];
@@ -2999,6 +3011,9 @@
       saveEvents();
       render();
       showSummary("予定を追加しました。場所情報はあとで再取得できます。");
+    } finally {
+      searchKeys.forEach((key) => activePlaceSearchKeys.delete(key));
+      render();
     }
   }
 
@@ -4685,19 +4700,32 @@
         note.textContent = "時刻が不明です";
         meta.append(document.createElement("br"), note);
       }
+      if (isPlaceSearchActive(event.id, "main") || event.placePending) {
+        meta.append(document.createElement("br"), createPlaceSearchStatus("予定全体の場所を検索中…"));
+      }
       const actions = document.createElement("div");
       actions.className = "event-actions";
       const routeButton = createSmallButton("地図", () => showEventRouteDetails(event.id));
       routeButton.disabled = !hasRouteTargets(event);
       const overviewRouteButton = createSmallButton("全体ルート", () => showEventFullRoute(event.id));
       overviewRouteButton.disabled = getEventRouteTargets(event).length < 1;
+      const retryPlaceButton = createSmallButton("場所再検索", () => retryEventPlaceLookup(event.id, "main"));
+      retryPlaceButton.disabled = !event.location || isPlaceSearchActive(event.id, "main");
       const editButton = createSmallButton("編集", () => editEvent(event.id));
       const deleteButton = createSmallButton("削除", () => deleteEvent(event.id));
-      actions.append(routeButton, overviewRouteButton, editButton, deleteButton);
+      actions.append(routeButton, overviewRouteButton, retryPlaceButton, editButton, deleteButton);
       if (event.id === animatedEventId) {
         item.classList.add("just-added");
       }
       item.append(title, meta, actions);
+      if (stops.length) {
+        const stopList = document.createElement("div");
+        stopList.className = "event-stop-list";
+        stops.forEach((stop) => {
+          stopList.append(createEventStopRow(event, stop));
+        });
+        item.append(stopList);
+      }
       allEventsList.append(item);
     });
   }
@@ -4709,6 +4737,49 @@
     button.textContent = label;
     button.addEventListener("click", handler);
     return button;
+  }
+
+  function createEventStopRow(event, stop) {
+    const row = document.createElement("div");
+    row.className = "event-stop-row";
+    const details = document.createElement("div");
+    details.className = "event-stop-details";
+    const title = document.createElement("strong");
+    title.textContent = [stop.time || "時刻未定", stop.title || "用事名未設定"].join(" ");
+    const meta = document.createElement("span");
+    meta.textContent = stop.location ? `場所: ${stop.location}` : "場所未設定";
+    details.append(title, meta);
+    if (isPlaceSearchActive(event.id, stop.id) || stop.placePending) {
+      details.append(createPlaceSearchStatus("場所を検索中…"));
+    } else if (hasUsablePlace(stop.place)) {
+      const ready = document.createElement("span");
+      ready.className = "place-search-ready";
+      ready.textContent = "場所候補を設定済み";
+      details.append(ready);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "event-stop-actions";
+    const mapButton = createSmallButton("地図", () => showEventRouteDetails(event.id, stop.id));
+    mapButton.disabled = !hasUsablePlace(stop.place);
+    const editButton = createSmallButton("編集", () => editEventStop(event.id, stop.id));
+    const retryButton = createSmallButton("場所再検索", () => retryEventPlaceLookup(event.id, stop.id));
+    retryButton.disabled = !stop.location || isPlaceSearchActive(event.id, stop.id);
+    const deleteButton = createSmallButton("削除", () => deleteEventStop(event.id, stop.id));
+    actions.append(mapButton, editButton, retryButton, deleteButton);
+    row.append(details, actions);
+    return row;
+  }
+
+  function createPlaceSearchStatus(message) {
+    const status = document.createElement("span");
+    status.className = "place-search-status";
+    status.textContent = message;
+    return status;
+  }
+
+  function isPlaceSearchActive(eventId, targetId) {
+    return activePlaceSearchKeys.has(`${eventId}:${targetId}`);
   }
 
   function renderScheduleTable(dayEvents, date) {
@@ -4862,7 +4933,9 @@
           timelineBoard.append(createTimelineRow(
             stop.endTime ? `${stop.time}-${stop.endTime}` : stop.time,
             stop.title,
-            stop.location ? `場所: ${stop.location}` : "場所未設定",
+            isPlaceSearchActive(item.id, stop.id) || stop.placePending
+              ? `${stop.location ? `場所: ${stop.location} / ` : ""}場所を検索中…`
+              : (stop.location ? `場所: ${stop.location}` : "場所未設定"),
             false,
             item.id,
             { stopId: stop.id },
@@ -4962,7 +5035,24 @@
       editButton.className = "timeline-delete";
       editButton.type = "button";
       editButton.textContent = "編集";
-      editButton.addEventListener("click", () => editEvent(eventId));
+      editButton.addEventListener("click", () => {
+        if (options.stopId) {
+          editEventStop(eventId, options.stopId);
+        } else {
+          editEvent(eventId);
+        }
+      });
+      if (options.stopId) {
+        const event = events.find((entry) => entry.id === eventId);
+        const stop = event && getEventStops(event).find((entry) => entry.id === options.stopId);
+        const retryButton = document.createElement("button");
+        retryButton.className = "timeline-delete";
+        retryButton.type = "button";
+        retryButton.textContent = "場所再検索";
+        retryButton.disabled = !stop || !stop.location || isPlaceSearchActive(eventId, options.stopId);
+        retryButton.addEventListener("click", () => retryEventPlaceLookup(eventId, options.stopId));
+        item.append(retryButton);
+      }
       if (options.fullRoute) {
         const routeButton = document.createElement("button");
         routeButton.className = "timeline-delete";
@@ -5008,6 +5098,121 @@
     render();
     renderRouteList([]);
     setRouteStatus("時刻別の小さな用事を削除しました。必要なら移動時間を調べ直してください。");
+  }
+
+  function editEventStop(eventId, stopId) {
+    const target = events.find((item) => item.id === eventId);
+    const stop = target && getEventStops(target).find((item) => item.id === stopId);
+    if (!target || !stop) {
+      return;
+    }
+
+    const title = promptClean("用事名", stop.title || "", 64);
+    if (title === null) return;
+    const time = promptOptionalTime("開始時刻", stop.time || "");
+    if (time === null) return;
+    if (time === undefined) {
+      showSummary("開始時刻は HH:MM で入力するか、空欄にしてください。");
+      return;
+    }
+    const endTime = promptOptionalTime("終了時刻", stop.endTime || "");
+    if (endTime === null) return;
+    if (endTime === undefined) {
+      showSummary("終了時刻は HH:MM で入力するか、空欄にしてください。");
+      return;
+    }
+    if (time && endTime && timeToMinutes(endTime) <= timeToMinutes(time)) {
+      showSummary("終了時刻は開始時刻より後にしてください。");
+      return;
+    }
+    const location = promptClean("場所", stop.location || "", 80);
+    if (location === null) return;
+
+    const locationChanged = location !== (stop.location || "");
+    const updatedStop = {
+      ...stop,
+      title: title || location || "用事名未設定",
+      time,
+      endTime,
+      location,
+      place: locationChanged ? null : stop.place,
+      placePending: Boolean(location && locationChanged),
+    };
+    events = events.map((item) => {
+      if (item.id !== eventId) return item;
+      const stops = getEventStops(item).map((entry) => entry.id === stopId ? updatedStop : entry);
+      return { ...item, stops, stopsPending: stops.some((entry) => entry.placePending), updatedAt: new Date().toISOString() };
+    });
+    saveEvents();
+    render();
+    renderRouteList([]);
+    setRouteStatus("個別の用事を編集しました。");
+    if (locationChanged && location) {
+      retryEventPlaceLookup(eventId, stopId, { preservePending: true });
+    }
+  }
+
+  async function retryEventPlaceLookup(eventId, targetId = "main", options = {}) {
+    const key = `${eventId}:${targetId}`;
+    if (activePlaceSearchKeys.has(key)) {
+      return;
+    }
+    const target = events.find((item) => item.id === eventId);
+    const stop = targetId === "main" ? null : target && getEventStops(target).find((item) => item.id === targetId);
+    const location = stop ? stop.location : target && target.location;
+    if (!target || !location) {
+      showSummary("再検索する場所名を先に入力してください。");
+      return;
+    }
+
+    activePlaceSearchKeys.add(key);
+    if (!options.preservePending) {
+      events = events.map((item) => {
+        if (item.id !== eventId) return item;
+        if (targetId === "main") {
+          return { ...item, place: null, placePending: true };
+        }
+        const stops = getEventStops(item).map((entry) => entry.id === targetId
+          ? { ...entry, place: null, placePending: true }
+          : entry);
+        return { ...item, stops, stopsPending: true };
+      });
+      saveEvents();
+    }
+    render();
+    setRouteStatus(`「${location}」の場所候補を検索しています。`);
+
+    try {
+      const latest = events.find((item) => item.id === eventId) || target;
+      const knownPlaces = [latest.place, ...getEventStops(latest).filter((entry) => entry.id !== targetId).map((entry) => entry.place)]
+        .filter(hasUsablePlace);
+      const place = await confirmPlaceCandidate(location, { ...latest, proximityPlaces: knownPlaces });
+      const selectedPlace = place && !place.nonPlace ? place : null;
+      events = events.map((item) => {
+        if (item.id !== eventId) return item;
+        if (targetId === "main") {
+          return { ...item, place: selectedPlace, placePending: false, updatedAt: new Date().toISOString() };
+        }
+        const stops = getEventStops(item).map((entry) => entry.id === targetId
+          ? { ...entry, place: selectedPlace, placePending: false }
+          : entry);
+        return { ...item, stops, stopsPending: stops.some((entry) => entry.placePending), updatedAt: new Date().toISOString() };
+      });
+      saveEvents();
+      setRouteStatus(selectedPlace ? "場所候補を更新しました。" : "この用事には場所を設定しませんでした。");
+    } catch {
+      events = events.map((item) => {
+        if (item.id !== eventId) return item;
+        if (targetId === "main") return { ...item, placePending: false };
+        const stops = getEventStops(item).map((entry) => entry.id === targetId ? { ...entry, placePending: false } : entry);
+        return { ...item, stops, stopsPending: stops.some((entry) => entry.placePending) };
+      });
+      saveEvents();
+      setRouteStatus("場所候補を取得できませんでした。時間をおいて再検索してください。");
+    } finally {
+      activePlaceSearchKeys.delete(key);
+      render();
+    }
   }
 
   function deleteEvent(eventId) {
@@ -5124,6 +5329,18 @@
       return null;
     }
     return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
+  }
+
+  function promptOptionalTime(label, currentValue) {
+    const value = window.prompt(`${label}を HH:MM で入力してください。時刻未定なら空欄にします。`, currentValue || "");
+    if (value === null) {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "";
+    }
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed) ? trimmed : undefined;
   }
 
   function promptNumber(label, currentValue, min, max) {
