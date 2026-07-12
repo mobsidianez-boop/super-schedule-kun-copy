@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=postcode-fallback-1">
+  <link rel="stylesheet" href="style.css?v=home-placeholder-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -233,7 +233,7 @@
           <div class="home-settings-row">
             <label>
               <span>自宅の住所・郵便番号・最寄り駅</span>
-              <input id="home-location-input" type="text" maxlength="80" placeholder="郵便番号、住所、最寄り駅など">
+              <input id="home-location-input" type="text" maxlength="80" placeholder="郵便番号、最寄り駅、都道府県、市区町村を入力">
             </label>
             <button class="button primary" type="button" id="home-search-button">候補を検索</button>
             <button class="button" type="button" id="home-current-button">現在地を自宅に登録</button>
@@ -437,7 +437,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=postcode-fallback-1"></script>
+  <script src="planner.js?v=home-placeholder-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
