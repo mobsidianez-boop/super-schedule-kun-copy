@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=datetime-guard-1">
+  <link rel="stylesheet" href="style.css?v=ocr-route-home-1">
 </head>
 <body class="app-mode">
   <header class="header">
@@ -206,12 +206,15 @@
             <input id="view-date" type="date">
           </label>
           <button class="button" type="button" id="locate-routes-button">現在地から移動時間を調べる</button>
+          <button class="button" type="button" id="set-home-button">自宅を設定</button>
+          <span class="home-status" id="home-status">自宅未設定</span>
           <div class="planner-summary" id="planner-summary">予定を読み込んでいます。</div>
         </div>
         <div class="route-status" id="route-status">現在地と予定場所を地図で確認できます。</div>
         <div class="planner-map" id="planner-map" aria-label="現在地と予定場所の地図"></div>
         <div class="map-legend" aria-label="地図のピン説明">
           <span><i class="legend-current"></i>現在地</span>
+          <span><i class="legend-home"></i>自宅</span>
           <span><i class="legend-event"></i>予定場所</span>
           <span><i class="legend-route"></i>移動ルート</span>
           <span><i class="legend-traffic"></i>渋滞区間</span>
@@ -400,7 +403,7 @@
       tomtomTrafficApiKey: ""
     };
   </script>
-  <script src="planner.js?v=datetime-guard-1"></script>
+  <script src="planner.js?v=ocr-route-home-1"></script>
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 

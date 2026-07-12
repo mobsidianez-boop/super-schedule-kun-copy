@@ -981,8 +981,21 @@ h3 {
     linear-gradient(115deg, transparent 0 38%, rgba(255, 255, 255, 0.54) 48%, transparent 58% 100%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 72px);
   transform: translateX(-70%);
-  opacity: 0.42;
-  animation: ambientPanelSweep 9.5s ease-in-out infinite;
+  opacity: 0.62;
+  animation: ambientPanelSweep 7.5s ease-in-out infinite;
+}
+
+.planner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgba(57, 189, 248, 0.24) 0 2px, transparent 2.5px) 0 0 / 70px 70px,
+    radial-gradient(circle, rgba(255, 125, 172, 0.2) 0 2px, transparent 2.5px) 28px 36px / 96px 96px;
+  opacity: 0.48;
+  animation: plannerBackgroundDrift 18s linear infinite;
 }
 
 .planner > * {
@@ -1329,6 +1342,16 @@ h3 {
   animation: mapBorderGlow 7s linear infinite;
 }
 
+.home-status {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .planner-map .leaflet-container,
 .planner-map .leaflet-pane,
 .planner-map .leaflet-map-pane {
@@ -1431,9 +1454,58 @@ h3 {
   width: 20px;
   height: 18px;
   border: 2px solid #ffffff;
-  border-radius: 999px;
-  background: #8b6cff;
+  border-radius: 58% 58% 52% 52%;
+  background: linear-gradient(180deg, #9f88ff, #7f62ea);
   box-shadow: 0 0 0 1px rgba(91, 65, 190, 0.22);
+}
+
+.legend-home,
+.home-place-marker {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 20px;
+  border: 2px solid #ffffff;
+  border-radius: 3px;
+  background: #ff8a4c;
+  box-shadow: 0 5px 12px rgba(180, 81, 35, 0.22);
+}
+
+.legend-home::before,
+.home-place-marker::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: -9px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ffffff;
+  border-radius: 3px;
+  background: #ff8a4c;
+  transform: rotate(45deg);
+  z-index: -1;
+}
+
+.legend-home::after,
+.home-place-marker::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  bottom: 0;
+  width: 6px;
+  height: 10px;
+  border-radius: 2px 2px 0 0;
+  background: #ffffff;
+}
+
+.home-place-marker-icon {
+  background: transparent;
+  border: 0;
+}
+
+.home-place-marker {
+  width: 28px;
+  height: 23px;
 }
 
 .legend-current::before {
@@ -1477,10 +1549,10 @@ h3 {
   position: relative;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 30px;
+  width: 32px;
+  height: 38px;
   border: 2px solid #ffffff;
-  border-radius: 999px 999px 999px 4px;
+  border-radius: 999px 999px 999px 5px;
   background: var(--event-color, #2f80c2);
   box-shadow: 0 8px 18px rgba(35, 53, 89, 0.24);
   color: transparent;
@@ -1493,7 +1565,7 @@ h3 {
 .event-place-marker::after {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.34);
 }
@@ -1882,6 +1954,12 @@ h3 {
   72%,
   100% {
     transform: translateX(70%);
+  }
+}
+
+@keyframes plannerBackgroundDrift {
+  to {
+    background-position: 140px 70px, -96px 132px;
   }
 }
 

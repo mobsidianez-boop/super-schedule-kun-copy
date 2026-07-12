@@ -52,6 +52,8 @@
   const viewDateInput = document.querySelector("#view-date");
   const summary = document.querySelector("#planner-summary");
   const locateRoutesButton = document.querySelector("#locate-routes-button");
+  const setHomeButton = document.querySelector("#set-home-button");
+  const homeStatus = document.querySelector("#home-status");
   const routeStatus = document.querySelector("#route-status");
   const mapContainer = document.querySelector("#planner-map");
   const routeList = document.querySelector("#route-list");
@@ -85,6 +87,8 @@
   let eventMarkers = [];
   let routeLines = [];
   let currentPosition = null;
+  let homeLocation = null;
+  let homeMarker = null;
   let locationWatchId = null;
   let activeRouteEventId = "";
   let expiredNotice = "";
@@ -92,6 +96,7 @@
   let expirySweepId = null;
   let passwordSetupPromptOpen = false;
   const placeLookupIds = new Set();
+  const placeSearchCache = new Map();
   const enabledPlannerOAuthProviders = new Set();
   const plannerProviderLabels = {
     google: "Google",
@@ -188,6 +193,10 @@
       }
       handleRouteLookup();
     });
+  }
+
+  if (setHomeButton) {
+    setHomeButton.addEventListener("click", setHomeLocation);
   }
 
   candidateAddButton.addEventListener("click", () => {
@@ -872,7 +881,9 @@
 
   function clearTestSession(options = {}) {
     sessionStorage.removeItem(`${STORAGE_KEY}:test`);
+    sessionStorage.removeItem(`${STORAGE_KEY}:test:home`);
     localStorage.removeItem(`${STORAGE_KEY}:test`);
+    localStorage.removeItem(`${STORAGE_KEY}:test:home`);
     if (!options.keepAccess) {
       sessionStorage.removeItem(ACCESS_KEY);
       localStorage.removeItem(ACCESS_KEY);
@@ -885,6 +896,8 @@
     plannerUserId = "";
     plannerCloudWarningShown = false;
     events = [];
+    homeLocation = null;
+    renderHomeStatus();
     if (plannerGate) {
       plannerGate.classList.remove("gate-unlock", "gate-shake");
       plannerGate.hidden = false;
@@ -909,6 +922,8 @@
     } else {
       events = loadEvents(getLocalEventsKey());
     }
+    homeLocation = loadHomeLocation();
+    renderHomeStatus();
     if (plannerGate) {
       animateElement(plannerGate, "gate-unlock", 520);
       window.setTimeout(() => {
@@ -1701,11 +1716,14 @@
   }
 
   function extractLargeOcrTitleHint(data, text) {
-    const lines = Array.isArray(data && data.lines) ? data.lines : [];
+    const lines = sortOcrLinesInReadingOrder(Array.isArray(data && data.lines) ? data.lines : []);
     if (!lines.length || !text) {
       return "";
     }
     const normalizedText = normalizeScheduleText(text);
+    const pageBox = data && data.imageSize ? data.imageSize : {};
+    const pageWidth = Number(pageBox.width) || Math.max(1, ...lines.map((line) => Number(line.bbox && line.bbox.x1) || 0));
+    const pageHeight = Number(pageBox.height) || Math.max(1, ...lines.map((line) => Number(line.bbox && line.bbox.y1) || 0));
     const lineItems = lines
       .filter((line) => isLikelyHorizontalOcrLine(line))
       .map((line, index) => {
@@ -1713,7 +1731,10 @@
         const normalized = normalizeScheduleText(raw);
         const box = line && line.bbox ? line.bbox : {};
         const height = Math.max(0, Number(box.y1) - Number(box.y0));
-        return { index, raw, normalized, height, score: scoreScheduleLine(normalized), signals: countReliableScheduleSignals(normalized) };
+        const width = Math.max(0, Number(box.x1) - Number(box.x0));
+        const yRatio = Math.max(0, Math.min(1, (Number(box.y0) || 0) / pageHeight));
+        const xRatio = Math.max(0, Math.min(1, (Number(box.x0) || 0) / pageWidth));
+        return { index, raw, normalized, height, width, yRatio, xRatio, score: scoreScheduleLine(normalized), signals: countReliableScheduleSignals(normalized) };
       })
       .filter((item) => item.normalized && isLikelyTitleLine(item.normalized) && normalizedText.includes(item.normalized));
     if (!lineItems.length) {
@@ -1723,6 +1744,7 @@
     const scheduleIndexes = new Set(lineItems
       .filter((item) => item.score >= 3 || item.signals >= 2)
       .map((item) => item.index));
+    const medianHeight = [...lineItems].map((item) => item.height).sort((a, b) => a - b)[Math.floor(lineItems.length / 2)] || 1;
 
     const candidates = lineItems
       .map((item) => {
@@ -1730,13 +1752,17 @@
         const titleWordBonus = hasTitleKeyword(item.normalized) ? 35 : 0;
         const scheduleBonus = nearSchedule ? 24 : 0;
         const signalBonus = item.signals * 12 + Math.max(0, item.score) * 4;
+        const sizeBonus = Math.min(50, (item.height / medianHeight) * 18);
+        const topReadingBonus = Math.max(0, 32 - item.yRatio * 40);
+        const lowerRightPenalty = item.yRatio > 0.68 && item.xRatio > 0.55 ? 44 : 0;
+        const tinyTextPenalty = item.height < medianHeight * 0.78 ? 28 : 0;
         return {
           ...item,
-          titleScore: item.height * 2 + titleWordBonus + scheduleBonus + signalBonus,
+          titleScore: sizeBonus + topReadingBonus + titleWordBonus + scheduleBonus + signalBonus - lowerRightPenalty - tinyTextPenalty,
         };
       })
       .filter((item) => item.signals > 0 || hasTitleKeyword(item.normalized) || item.titleScore >= 36)
-      .sort((a, b) => b.titleScore - a.titleScore || b.height - a.height || a.index - b.index);
+      .sort((a, b) => b.titleScore - a.titleScore || a.yRatio - b.yRatio || b.height - a.height || a.xRatio - b.xRatio);
 
     return candidates[0] ? cleanText(candidates[0].normalized, 48) : "";
   }
@@ -1897,7 +1923,7 @@
     if (!lines.length) {
       return cleanOcrText(data && data.text);
     }
-    return lines
+    return sortOcrLinesInReadingOrder(lines)
       .filter((line) => isLikelyHorizontalOcrLine(line))
       .map((line) => line.text || "")
       .join("\n")
@@ -1907,6 +1933,28 @@
       .join("\n")
       .replace(/[ \t]+/g, " ")
       .slice(0, 900);
+  }
+
+  function sortOcrLinesInReadingOrder(lines) {
+    const usable = lines.filter((line) => line && line.bbox);
+    if (usable.length < 2) {
+      return lines;
+    }
+    const heights = usable
+      .map((line) => Math.max(1, Number(line.bbox.y1) - Number(line.bbox.y0)))
+      .sort((a, b) => a - b);
+    const medianHeight = heights[Math.floor(heights.length / 2)] || 18;
+    const rowGap = Math.max(10, medianHeight * 0.7);
+    return [...lines].sort((left, right) => {
+      const a = left.bbox || {};
+      const b = right.bbox || {};
+      const ay = Number(a.y0) || 0;
+      const by = Number(b.y0) || 0;
+      if (Math.abs(ay - by) <= rowGap) {
+        return (Number(a.x0) || 0) - (Number(b.x0) || 0);
+      }
+      return ay - by;
+    });
   }
 
   function isLikelyHorizontalOcrLine(line) {
@@ -1992,6 +2040,11 @@
   async function fetchPlaceCandidates(location, event, maxResults = 5) {
     const searchPlan = buildPlaceSearchQueries(location, event);
     const proximity = getPlaceSearchProximity(event);
+    const cacheKey = JSON.stringify([searchPlan.normalized, searchPlan.contextHints, proximity && [proximity.lat, proximity.lon], maxResults]);
+    const cached = placeSearchCache.get(cacheKey);
+    if (cached && Date.now() - cached.savedAt < 10 * 60 * 1000) {
+      return cached.results;
+    }
     const directCoordinates = parseCoordinatesFromText(location);
     if (directCoordinates && !(event && event.fromOcr)) {
       return [makeCoordinatePlaceIntel(location, directCoordinates, event, searchPlan)];
@@ -1999,7 +2052,7 @@
     const results = [];
     const seen = new Set();
 
-    for (const query of searchPlan.queries) {
+    for (const query of searchPlan.queries.slice(0, 5)) {
       const places = await searchPlacesForQuery(query, Math.min(3, Math.max(1, maxResults)), proximity, searchPlan.area);
 
       places.forEach((place) => {
@@ -2011,12 +2064,13 @@
         results.push(makePlaceIntel(location, query, place, event, searchPlan, proximity));
       });
 
-      if (maxResults <= 1 && results.length >= maxResults) {
+      if (results.length >= maxResults) {
         break;
       }
     }
-
-    return rankPlaceCandidates(results, searchPlan, proximity).slice(0, maxResults);
+    const ranked = rankPlaceCandidates(results, searchPlan, proximity).slice(0, maxResults);
+    placeSearchCache.set(cacheKey, { results: ranked, savedAt: Date.now() });
+    return ranked;
   }
 
   function parseCoordinatesFromText(value) {
@@ -2093,7 +2147,7 @@
         ].join(","));
         params.set("bounded", proximity ? "0" : "1");
       }
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+      const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {}, 5500);
       if (!response.ok) {
         return [];
       }
@@ -2115,7 +2169,7 @@
         params.set("lat", String(anchor.lat));
         params.set("lon", String(anchor.lon));
       }
-      const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`);
+      const response = await fetchWithTimeout(`https://photon.komoot.io/api/?${params.toString()}`, {}, 5500);
       if (!response.ok) {
         return [];
       }
@@ -2147,6 +2201,18 @@
       }).filter((place) => Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)));
     } catch {
       return [];
+    }
+  }
+
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      return await fetch(url, { ...options, signal: controller ? controller.signal : options.signal });
+    } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     }
   }
 
@@ -2832,8 +2898,8 @@
 
   async function handleRouteLookup() {
     const dayEvents = getSelectedDayEvents().filter((item) => hasRouteTargets(item));
-    if (!navigator.geolocation) {
-      setRouteStatus("このブラウザは現在地取得に対応していません。");
+    if (!navigator.geolocation && !homeLocation) {
+      setRouteStatus("このブラウザは現在地取得に対応していません。自宅を設定すると、自宅からのルートを表示できます。");
       return;
     }
 
@@ -2847,17 +2913,31 @@
     setRouteStatus("現在地を取得しています。");
 
     try {
-      const current = currentPosition || await getCurrentPosition();
-      currentPosition = current;
+      let current = currentPosition;
+      if (!current && navigator.geolocation) {
+        try {
+          current = await getCurrentPosition();
+          currentPosition = current;
+        } catch {
+          current = homeLocation;
+        }
+      }
+      current = current || homeLocation;
+      if (!current) {
+        throw new Error("現在地を取得できず、自宅も未設定です。");
+      }
       const routeResults = [];
       initMap(current, 15, { recenter: true });
       clearRouteAndEventLayers();
-      drawCurrentPosition(current);
+      if (currentPosition) {
+        drawCurrentPosition(currentPosition);
+      }
+      drawHomeMarker();
 
       if (!dayEvents.length) {
         renderRouteList([]);
         plannerMap.setView([current.lat, current.lon], 15);
-        setRouteStatus("現在地を地図に表示しました。登録済み予定に場所がないため、移動時間は未表示です。");
+        setRouteStatus(`${currentPosition ? "現在地" : "自宅"}を地図に表示しました。登録済み予定に場所がないため、移動時間は未表示です。`);
         return;
       }
 
@@ -2868,14 +2948,17 @@
       saveEvents();
       render();
       clearRouteAndEventLayers();
-      updateCurrentPositionMarker(current);
+      if (currentPosition) {
+        updateCurrentPositionMarker(currentPosition);
+      }
+      drawHomeMarker();
       const updatedDayEvents = getSelectedDayEvents().filter((item) => hasRouteTargets(item));
       const orderedTargets = getDayRouteTargets(updatedDayEvents);
       orderedTargets.forEach(drawSchedulePlaceMarker);
 
       let previous = {
-        title: "現在地",
-        location: "現在地",
+        title: currentPosition ? "現在地" : "自宅",
+        location: currentPosition ? "現在地" : "自宅",
         place: current,
       };
       for (const target of orderedTargets) {
@@ -3240,6 +3323,10 @@
       currentMarker.remove();
       currentMarker = null;
     }
+    if (homeMarker) {
+      homeMarker.remove();
+      homeMarker = null;
+    }
     eventMarkers.forEach((marker) => marker.remove());
     routeLines.forEach((line) => line.remove());
     eventMarkers = [];
@@ -3251,6 +3338,24 @@
     routeLines.forEach((line) => line.remove());
     eventMarkers = [];
     routeLines = [];
+  }
+
+  function drawHomeMarker() {
+    if (!plannerMap || !homeLocation || !Number.isFinite(homeLocation.lat) || !Number.isFinite(homeLocation.lon)) {
+      return;
+    }
+    if (homeMarker) {
+      homeMarker.remove();
+    }
+    homeMarker = window.L.marker([homeLocation.lat, homeLocation.lon], {
+      icon: window.L.divIcon({
+        className: "home-place-marker-icon",
+        html: '<span class="home-place-marker"><i></i></span>',
+        iconSize: [34, 40],
+        iconAnchor: [17, 36],
+        popupAnchor: [0, -30],
+      }),
+    }).addTo(plannerMap).bindPopup(`自宅<br>${escapeHtml(homeLocation.displayName || homeLocation.query || "登録済み")}`);
   }
 
   function drawCurrentPosition(current) {
@@ -3392,9 +3497,9 @@
     return window.L.divIcon({
       className: "event-place-marker-icon",
       html: `<span class="event-place-marker" style="--event-color:${color}">${escapeHtml(label)}</span>`,
-      iconSize: [34, 42],
-      iconAnchor: [17, 39],
-      popupAnchor: [0, -34],
+      iconSize: [42, 50],
+      iconAnchor: [21, 46],
+      popupAnchor: [0, -42],
     });
   }
 
@@ -3414,6 +3519,7 @@
       return;
     }
     clearRouteAndEventLayers();
+    drawHomeMarker();
     if (currentPosition) {
       updateCurrentPositionMarker(currentPosition);
     }
@@ -3600,24 +3706,38 @@
         return;
       }
 
-      initMap(targets[0].place, 14, { recenter: true });
+      let routeOrigin = currentPosition;
+      if (!routeOrigin && navigator.geolocation) {
+        try {
+          routeOrigin = await getCurrentPosition();
+          currentPosition = routeOrigin;
+        } catch {
+          routeOrigin = homeLocation;
+        }
+      }
+      routeOrigin = routeOrigin || homeLocation;
+      initMap(routeOrigin || targets[0].place, 14, { recenter: true });
       clearRouteAndEventLayers();
       if (currentPosition) {
         updateCurrentPositionMarker(currentPosition);
       }
+      drawHomeMarker();
       targets.forEach(drawSchedulePlaceMarker);
 
-      if (targets.length < 2) {
-        renderRouteList([{ event: updatedEvent, target: targets[0], status: "この予定の場所は1件だけです。" }]);
+      if (targets.length < 2 && !routeOrigin) {
+        renderRouteList([{ event: updatedEvent, target: targets[0], status: "現在地または自宅を取得すると、ここまでのルートを表示できます。" }]);
         fitMapToTargets(targets);
         setRouteStatus("この予定の場所は1件だけです。");
         return;
       }
 
       const routeResults = [];
-      for (let index = 1; index < targets.length; index += 1) {
-        const from = targets[index - 1];
-        const target = targets[index];
+      const routeTargets = routeOrigin
+        ? [{ title: currentPosition ? "現在地" : "自宅", location: currentPosition ? "現在地" : "自宅", place: routeOrigin }, ...targets]
+        : targets;
+      for (let index = 1; index < routeTargets.length; index += 1) {
+        const from = routeTargets[index - 1];
+        const target = routeTargets[index];
         const fromLabel = from.time ? `${from.time} ${from.title}` : from.title;
         try {
           setRouteStatus(`${fromLabel} から ${target.location} への道路ルートを調べています。`);
@@ -3636,7 +3756,7 @@
 
       renderRouteList(routeResults);
       fitMapToTargets(targets);
-      setRouteStatus(`${event.title} の場所を登録時間順に道路ルートで結びました。`);
+      setRouteStatus(`${event.title} を${routeOrigin ? (currentPosition ? "現在地" : "自宅") + "から" : ""}登録時間順に道路ルートで結びました。`);
     } catch (error) {
       activeRouteEventId = "";
       setRouteStatus(`全体ルートを取得できませんでした: ${getErrorText(error)}`);
@@ -4301,7 +4421,7 @@
       const routeButton = createSmallButton("地図", () => showEventRouteDetails(event.id));
       routeButton.disabled = !hasRouteTargets(event);
       const overviewRouteButton = createSmallButton("全体ルート", () => showEventFullRoute(event.id));
-      overviewRouteButton.disabled = getEventRouteTargets(event).length < 2;
+      overviewRouteButton.disabled = getEventRouteTargets(event).length < 1;
       const editButton = createSmallButton("編集", () => editEvent(event.id));
       const deleteButton = createSmallButton("削除", () => deleteEvent(event.id));
       actions.append(routeButton, overviewRouteButton, editButton, deleteButton);
@@ -4464,7 +4584,7 @@
         makeEventMeta(item),
         false,
         item.id,
-        { fullRoute: getEventRouteTargets(item).length > 1 },
+        { fullRoute: getEventRouteTargets(item).length > 0 },
       ));
       getEventStops(item)
         .filter((stop) => stop.time)
@@ -4806,6 +4926,88 @@
       return `${STORAGE_KEY}:test`;
     }
     return STORAGE_KEY;
+  }
+
+  function getHomeStorageKey() {
+    return `${getLocalEventsKey()}:home`;
+  }
+
+  function loadHomeLocation() {
+    try {
+      const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
+      const value = JSON.parse(storage.getItem(getHomeStorageKey()) || "null");
+      return value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lon))
+        ? { ...value, lat: Number(value.lat), lon: Number(value.lon) }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveHomeLocation() {
+    const storage = plannerStorageMode === "test" ? sessionStorage : localStorage;
+    if (homeLocation) {
+      storage.setItem(getHomeStorageKey(), JSON.stringify(homeLocation));
+    } else {
+      storage.removeItem(getHomeStorageKey());
+    }
+  }
+
+  function renderHomeStatus() {
+    if (!homeStatus) {
+      return;
+    }
+    homeStatus.textContent = homeLocation
+      ? `自宅: ${cleanText(homeLocation.displayName || homeLocation.query || "設定済み", 28)}`
+      : "自宅未設定";
+    if (setHomeButton) {
+      setHomeButton.textContent = homeLocation ? "自宅を変更" : "自宅を設定";
+    }
+  }
+
+  async function setHomeLocation() {
+    if (!ensurePlannerAccess()) {
+      return;
+    }
+    const address = window.prompt("自宅として登録する住所や建物名を入力してください。正確な番地を入れたくない場合は、最寄り駅や町名でも使えます。", homeLocation && (homeLocation.query || homeLocation.displayName) || "");
+    if (address === null) {
+      return;
+    }
+    const query = cleanText(address, 80);
+    if (!query) {
+      if (homeLocation && window.confirm("登録済みの自宅を削除しますか？")) {
+        homeLocation = null;
+        saveHomeLocation();
+        renderHomeStatus();
+        if (homeMarker) {
+          homeMarker.remove();
+          homeMarker = null;
+        }
+      }
+      return;
+    }
+    setHomeButton.disabled = true;
+    setRouteStatus("自宅の場所を検索しています。");
+    try {
+      const candidates = await fetchPlaceCandidates(query, null, 3);
+      const selected = candidates.find((candidate) => window.confirm(`自宅の候補は「${candidate.displayName}」で合っていますか？`));
+      if (!selected) {
+        setRouteStatus("自宅の候補を確定しませんでした。入力を変えてもう一度試してください。");
+        return;
+      }
+      homeLocation = selected;
+      saveHomeLocation();
+      renderHomeStatus();
+      drawHomeMarker();
+      if (plannerMap) {
+        plannerMap.setView([selected.lat, selected.lon], 14);
+      }
+      setRouteStatus("自宅を登録しました。現在地が取得できない場合のルート起点にも使います。");
+    } catch (error) {
+      setRouteStatus(`自宅を検索できませんでした: ${getErrorText(error)}`);
+    } finally {
+      setHomeButton.disabled = false;
+    }
   }
 
   function loadEvents(key = getLocalEventsKey()) {
