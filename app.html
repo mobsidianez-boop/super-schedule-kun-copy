@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超スケジュールくん 予定管理</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=minimal-app-header-1">
+  <link rel="stylesheet" href="style.css?v=ocr-help-1">
 </head>
 <body class="app-mode">
   <header class="header minimal-header">
@@ -173,6 +173,25 @@
               <span>このデバイスの画像から読み取る</span>
               <input id="ocr-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
             </label>
+            <details class="ocr-help">
+              <summary>読み取りやすい画像</summary>
+              <div class="ocr-help-content">
+                <p>横書きで、時刻と予定名が同じ行にあり、上から予定順に並んだ画像が読み取りやすいです。</p>
+                <pre aria-label="読み取りやすい予定表の例">9/4 鳥取旅行
+
+9:00  朝食
+10:30 鳥取砂丘 観光
+13:15 昼食
+15:00-16:30 博物館 見学
+17:00 終了</pre>
+                <ul>
+                  <li>白っぽい背景と、黒や濃い色の文字</li>
+                  <li>傾きやぼやけがなく、文字が十分に大きい画像</li>
+                  <li>通知欄、広告、イラストなどを避けて予定部分を切り抜く</li>
+                  <li>縦書き、斜め文字、手書き、文字に重なる装飾は苦手です</li>
+                </ul>
+              </div>
+            </details>
             <div class="ocr-preview" id="ocr-preview" hidden>
               <img id="ocr-preview-image" alt="選択した画像のプレビュー">
               <div>
