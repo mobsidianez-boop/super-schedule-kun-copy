@@ -5100,33 +5100,16 @@
     setRouteStatus("時刻別の小さな用事を削除しました。必要なら移動時間を調べ直してください。");
   }
 
-  function editEventStop(eventId, stopId) {
+  async function editEventStop(eventId, stopId) {
     const target = events.find((item) => item.id === eventId);
     const stop = target && getEventStops(target).find((item) => item.id === stopId);
     if (!target || !stop) {
       return;
     }
 
-    const title = promptClean("用事名", stop.title || "", 64);
-    if (title === null) return;
-    const time = promptOptionalTime("開始時刻", stop.time || "");
-    if (time === null) return;
-    if (time === undefined) {
-      showSummary("開始時刻は HH:MM で入力するか、空欄にしてください。");
-      return;
-    }
-    const endTime = promptOptionalTime("終了時刻", stop.endTime || "");
-    if (endTime === null) return;
-    if (endTime === undefined) {
-      showSummary("終了時刻は HH:MM で入力するか、空欄にしてください。");
-      return;
-    }
-    if (time && endTime && timeToMinutes(endTime) <= timeToMinutes(time)) {
-      showSummary("終了時刻は開始時刻より後にしてください。");
-      return;
-    }
-    const location = promptClean("場所", stop.location || "", 80);
-    if (location === null) return;
+    const edited = await openStopEditor(stop);
+    if (!edited) return;
+    const { title, time, endTime, location } = edited;
 
     const locationChanged = location !== (stop.location || "");
     const updatedStop = {
@@ -5150,6 +5133,87 @@
     if (locationChanged && location) {
       retryEventPlaceLookup(eventId, stopId, { preservePending: true });
     }
+  }
+
+  function openStopEditor(stop) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "stop-editor-overlay";
+      overlay.setAttribute("role", "presentation");
+      const panel = document.createElement("section");
+      panel.className = "stop-editor";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-modal", "true");
+      panel.setAttribute("aria-labelledby", "stop-editor-title");
+      panel.innerHTML = `
+        <div class="stop-editor-head">
+          <h3 id="stop-editor-title">用事を編集</h3>
+          <button type="button" class="stop-editor-close" aria-label="閉じる">×</button>
+        </div>
+        <form class="stop-editor-form">
+          <label>用事名<input name="title" type="text" maxlength="64" required></label>
+          <div class="stop-editor-times">
+            <label>開始時刻<input name="time" type="time"></label>
+            <label>終了時刻<input name="endTime" type="time"></label>
+          </div>
+          <label>場所<input name="location" type="text" maxlength="80" placeholder="場所が未定なら空欄"></label>
+          <p class="stop-editor-error" role="alert" hidden></p>
+          <div class="stop-editor-actions">
+            <button type="button" class="button stop-editor-cancel">キャンセル</button>
+            <button type="submit" class="button primary">保存</button>
+          </div>
+        </form>`;
+      overlay.append(panel);
+      document.body.append(overlay);
+
+      const form = panel.querySelector("form");
+      const titleInput = form.elements.title;
+      const timeInput = form.elements.time;
+      const endInput = form.elements.endTime;
+      const locationInput = form.elements.location;
+      const error = panel.querySelector(".stop-editor-error");
+      titleInput.value = stop.title || "";
+      timeInput.value = stop.time || "";
+      endInput.value = stop.endTime || "";
+      locationInput.value = stop.location || "";
+
+      const finish = (value) => {
+        document.removeEventListener("keydown", onKeyDown);
+        overlay.remove();
+        resolve(value);
+      };
+      const cancel = () => finish(null);
+      const onKeyDown = (event) => {
+        if (event.key === "Escape") cancel();
+      };
+      document.addEventListener("keydown", onKeyDown);
+      panel.querySelector(".stop-editor-close").addEventListener("click", cancel);
+      panel.querySelector(".stop-editor-cancel").addEventListener("click", cancel);
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) cancel();
+      });
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const title = cleanText(titleInput.value, 64);
+        const time = timeInput.value;
+        const endTime = endInput.value;
+        const location = cleanText(locationInput.value, 80);
+        if (!title) {
+          error.textContent = "用事名を入力してください。";
+          error.hidden = false;
+          titleInput.focus();
+          return;
+        }
+        if (time && endTime && timeToMinutes(endTime) <= timeToMinutes(time)) {
+          error.textContent = "終了時刻は開始時刻より後にしてください。";
+          error.hidden = false;
+          endInput.focus();
+          return;
+        }
+        finish({ title, time, endTime, location });
+      });
+      window.requestAnimationFrame(() => titleInput.focus());
+    });
   }
 
   async function retryEventPlaceLookup(eventId, targetId = "main", options = {}) {
@@ -5329,18 +5393,6 @@
       return null;
     }
     return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
-  }
-
-  function promptOptionalTime(label, currentValue) {
-    const value = window.prompt(`${label}を HH:MM で入力してください。時刻未定なら空欄にします。`, currentValue || "");
-    if (value === null) {
-      return null;
-    }
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return "";
-    }
-    return /^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed) ? trimmed : undefined;
   }
 
   function promptNumber(label, currentValue, min, max) {
