@@ -118,6 +118,8 @@
   const today = toDateInputValue(new Date());
   dateInput.value = today;
   viewDateInput.value = today;
+  attachManualTimeInput(startInput);
+  attachManualTimeInput(endInput);
   setDefaultEventDateTime();
   attachActionAnimations();
   initSupabaseSettingsForm();
@@ -5153,8 +5155,8 @@
         <form class="stop-editor-form">
           <label>用事名<input name="title" type="text" maxlength="64" required></label>
           <div class="stop-editor-times">
-            <label>開始時刻<input name="time" type="time"></label>
-            <label>終了時刻<input name="endTime" type="time"></label>
+            <label>開始時刻<input class="manual-time-input" name="time" type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" maxlength="5"></label>
+            <label>終了時刻<input class="manual-time-input" name="endTime" type="text" inputmode="numeric" autocomplete="off" placeholder="HH:MM" maxlength="5"></label>
           </div>
           <label>場所<input name="location" type="text" maxlength="80" placeholder="場所が未定なら空欄"></label>
           <p class="stop-editor-error" role="alert" hidden></p>
@@ -5176,6 +5178,8 @@
       timeInput.value = stop.time || "";
       endInput.value = stop.endTime || "";
       locationInput.value = stop.location || "";
+      attachManualTimeInput(timeInput);
+      attachManualTimeInput(endInput);
 
       const finish = (value) => {
         document.removeEventListener("keydown", onKeyDown);
@@ -5202,6 +5206,12 @@
           error.textContent = "用事名を入力してください。";
           error.hidden = false;
           titleInput.focus();
+          return;
+        }
+        if ((time && !isValidTimeText(time)) || (endTime && !isValidTimeText(endTime))) {
+          error.textContent = "時刻は24時間表記の HH:MM で入力してください。";
+          error.hidden = false;
+          (time && !isValidTimeText(time) ? timeInput : endInput).focus();
           return;
         }
         if (time && endTime && timeToMinutes(endTime) <= timeToMinutes(time)) {
@@ -5393,6 +5403,40 @@
       return null;
     }
     return /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
+  }
+
+  function attachManualTimeInput(input) {
+    if (!input || input.dataset.manualTimeReady === "true") {
+      return;
+    }
+    input.dataset.manualTimeReady = "true";
+    input.addEventListener("blur", () => {
+      input.value = normalizeManualTimeText(input.value);
+    });
+    input.addEventListener("input", () => {
+      input.setCustomValidity("");
+    });
+    input.addEventListener("invalid", () => {
+      input.setCustomValidity("時刻は24時間表記の HH:MM で入力してください。例: 09:30");
+    });
+  }
+
+  function normalizeManualTimeText(value) {
+    const raw = String(value || "").trim();
+    if (!raw || isValidTimeText(raw)) {
+      return raw;
+    }
+    const digits = raw.replace(/\D/g, "");
+    const padded = digits.length === 3 ? `0${digits}` : digits;
+    if (padded.length === 4) {
+      const formatted = `${padded.slice(0, 2)}:${padded.slice(2)}`;
+      return isValidTimeText(formatted) ? formatted : raw;
+    }
+    return raw;
+  }
+
+  function isValidTimeText(value) {
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
   }
 
   function promptNumber(label, currentValue, min, max) {
